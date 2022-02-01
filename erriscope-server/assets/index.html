@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <title>Erriscope</title>
+    <script src="assets/script.js"></script>
+    <link rel="stylesheet" href="assets/style.css">
+    <meta charset="utf-8"/>
+  </head>
+  <body>
+    <!-- Sidebar -->
+    <div id="sidebar">
+      <div class="errors-list">
+
+        <!--
+        <div class="file-group">
+          <span class="file-name">Filename.hs</span>
+          <div class="errors-for-file">
+            <div class="error">
+              <span class="location">Line 34:8</span>
+              <div class="error-preview">
+                This is the error preview.
+              </div>
+            </div>
+
+            <div class="error">
+              <span class="location">Line 38:8</span>
+              <div class="error-preview">
+                This is the error preview.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="file-group">
+          <span class="file-name">OtherFile.hs</span>
+          <div class="errors-for-file">
+            <div class="error">
+              <span class="location">Line 34:8</span>
+              <div class="error-preview">
+• Couldn't match type: StateT (S.Set Ghc.Name) m0 ()
+                 with: Ghc.IOEnv (Ghc.Env Ghc.TcGblEnv Ghc.TcLclEnv) a0
+  Expected: Ghc.TcM a0
+    Actual: StateT (S.Set Ghc.Name) m0 ()
+              </div>
+            </div>
+          </div>
+        </div>
+        -->
+
+      </div>
+    </div>
+
+        <!-- TODO button to copy file load command to clipboard -->
+    <!-- Viewport -->
+    <div id="viewport">
+      <!--
+      <div class="error-heading">
+        <span class="file-name">FileName.hs</span>
+        <span class="location">Line 34:8</span>
+      </div>
+      <div class="error-body">
+    • Couldn't match type: StateT (S.Set Ghc.Name) m0 ()
+                     with: Ghc.IOEnv (Ghc.Env Ghc.TcGblEnv Ghc.TcLclEnv) a0
+      Expected: Ghc.TcM a0
+        Actual: StateT (S.Set Ghc.Name) m0 ()
+    • In the second argument of ‘($)’, namely
+        ‘modify' (S.union $ M.keysSet nameMap)’
+      In a stmt of a 'do' block:
+        lift . lift $ modify' (S.union $ M.keysSet nameMap)
+      In the expression:
+        do binds' &lt;- (traverse . traverse)
+                       (modifyBinds nameMap debugNames) binds
+           lift . lift $ modify' (S.union $ M.keysSet nameMap)
+           pure $ Ghc.NValBinds binds' sigs
+   |
+46 |   lift . lift $ modify' (S.union $ M.keysSet nameMap)
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      </div>
+      -->
+    </div>
+  </body>
+</html>
