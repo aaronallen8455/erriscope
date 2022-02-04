@@ -8,8 +8,6 @@ import           Control.Exception (finally)
 import           Control.Monad
 import qualified Data.ByteString as BS
 import           Data.Foldable
-import           Data.Maybe
-import           Data.Traversable
 import qualified Data.IntMap.Strict as IM
 import qualified Network.WebSockets as WS
 

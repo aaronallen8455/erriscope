@@ -16,7 +16,6 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Encoding.Error as TE
 import           Prelude hiding (div, span)
-import           Text.Blaze (dataAttribute)
 import           Text.Blaze.Html5
 import           Text.Blaze.Html5.Attributes hiding (span)
 import           Text.Blaze.Html.Renderer.Utf8 (renderHtml)

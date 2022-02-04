@@ -29,6 +29,7 @@ extra-source-files: CHANGELOG.md,
 data-files: assets/favicon.ico
 
 executable erriscope-server
+    ghc-options: -Wall
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
@@ -46,6 +47,7 @@ executable erriscope-server
                       http-types,
                       file-embed,
                       erriscope-types,
+                      erriscope,
                       bytestring,
                       containers,
                       text,

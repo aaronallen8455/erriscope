@@ -3,6 +3,7 @@ module Main where
 
 import           Control.Concurrent (forkIO)
 import           Control.Concurrent.MVar
+import           Control.Monad
 import           Data.FileEmbed (embedStringFile)
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Text as T
@@ -11,7 +12,7 @@ import           Network.HTTP.Types
 import           Network.Wai.Handler.Warp (run)
 import           Text.Read (readMaybe)
 
-import           Erriscope.Html (HtmlCache(..), emptyHtmlCache, mockHtmlCache)
+import           Erriscope.Html (HtmlCache(..), mockHtmlCache)
 import           Erriscope.Sockets (runWebsocket)
 import           Paths_erriscope_server (getDataFileName)
 
@@ -75,7 +76,7 @@ import           Paths_erriscope_server (getDataFileName)
 main :: IO ()
 main = do
   htmlCache <- newMVar mockHtmlCache -- emptyHtmlCache
-  forkIO $ runWebsocket htmlCache
+  void . forkIO $ runWebsocket htmlCache
   run 8082 (app htmlCache)
 
 app :: MVar HtmlCache -> Application
