@@ -5,14 +5,12 @@ import           Control.Concurrent (forkIO)
 import           Control.Concurrent.MVar
 import           Control.Monad
 import           Data.FileEmbed (embedStringFile)
-import qualified Data.IntMap.Strict as IM
-import qualified Data.Text as T
+import qualified Data.Map.Strict as M
 import           Network.Wai
 import           Network.HTTP.Types
 import           Network.Wai.Handler.Warp (run)
-import           Text.Read (readMaybe)
 
-import           Erriscope.Html (HtmlCache(..), mockHtmlCache)
+import           Erriscope.Html (ErrorCache(..), emptyErrorCache, parseErrorId)
 import           Erriscope.Sockets (runWebsocket)
 import           Paths_erriscope_server (getDataFileName)
 
@@ -75,12 +73,12 @@ import           Paths_erriscope_server (getDataFileName)
 
 main :: IO ()
 main = do
-  htmlCache <- newMVar mockHtmlCache -- emptyHtmlCache
+  htmlCache <- newMVar emptyErrorCache
   void . forkIO $ runWebsocket htmlCache
   run 8082 (app htmlCache)
 
-app :: MVar HtmlCache -> Application
-app htmlMVar request respond = do
+app :: MVar ErrorCache -> Application
+app errorsMVar request respond = do
   case pathInfo request of
     [] -> do
       let lbs = $(embedStringFile "assets/index.html")
@@ -115,23 +113,24 @@ app htmlMVar request respond = do
           filePath
           Nothing
 
-    ["error", errIdxStr]
-      | Just errIdx <- readMaybe $ T.unpack errIdxStr
+    ["error", errorId]
+      | Just (file, ix) <- parseErrorId errorId
       -> do
-        htmlCache <- readMVar htmlMVar
-        case IM.lookup errIdx (viewportHtml htmlCache) of
-          Nothing ->
-            respond $
-              responseLBS
-                status404
-                [("Content-Type", "text/plain")]
-                "Error index doesn't exist"
-          Just html ->
+        errorCache <- readMVar errorsMVar
+        case M.lookup file (fileErrors errorCache) of
+          Just errors
+            | (_, (_, html) : _) <- splitAt (fromIntegral ix) errors ->
             respond $
               responseLBS
                 status200
                 [("Content-Type", "text/html")]
                 html
+          _ ->
+            respond $
+              responseLBS
+                status404
+                [("Content-Type", "text/plain")]
+                "Error index doesn't exist"
 
     _ ->
       respond $

@@ -1,9 +1,9 @@
-{-# LANGUAGE RecordWildCards #-}
 module Erriscope.Html
-  ( HtmlCache(..)
-  , emptyHtmlCache
-  , mockHtmlCache
-  , renderPayload
+  ( ErrorCache(..)
+  , emptyErrorCache
+  , renderViewport
+  , renderSidebar
+  , parseErrorId
   ) where
 
 import           Control.Monad
@@ -11,68 +11,95 @@ import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.State.Strict
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Char8 as BS8
-import qualified Data.IntMap.Strict as IM
+import qualified Data.Map.Strict as M
+import           Data.Maybe
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Encoding.Error as TE
+import           Data.Word
 import           Prelude hiding (div, span)
 import           Text.Blaze.Html5
 import           Text.Blaze.Html5.Attributes hiding (span)
 import           Text.Blaze.Html.Renderer.Utf8 (renderHtml)
+import           Text.Read (readMaybe)
 
 import qualified Erriscope.Types as ET
 
-data HtmlCache =
-  MkHtmlCache
-    { sidebarHtml :: LBS.ByteString
-    , viewportHtml :: IM.IntMap LBS.ByteString
+type RenderedHtml = LBS.ByteString
+
+-- The selected error needs to be known on the server. Perhaps have an identifier
+-- for errors. Could be the filename + numeric index. Then the rendered viewport
+-- html can be keyed on that identifier and it can be placed in the preview html
+-- as a data attribute. The identifier of the selected error can be kept as a
+-- separate field which is used during rendering the sidebar html.
+
+type ErrorId = (ET.FilePath, Word)
+
+parseErrorId :: T.Text -> Maybe ErrorId
+parseErrorId txt
+  | [pathTxt, ixTxt] <- T.split (== '-') txt
+  , Just ix <- readMaybe $ T.unpack ixTxt
+  = Just (TE.encodeUtf8 pathTxt, ix)
+  | otherwise = Nothing
+
+data ErrorCache =
+  MkErrorCache
+    { fileErrors :: M.Map ET.FilePath [(ET.FileError, RenderedHtml)]
+    , selectedError :: Maybe ErrorId
     }
 
-emptyHtmlCache :: HtmlCache
-emptyHtmlCache =
-  MkHtmlCache
-    { sidebarHtml = mempty
-    , viewportHtml = mempty
+emptyErrorCache :: ErrorCache
+emptyErrorCache =
+  MkErrorCache
+    { fileErrors = mempty
+    , selectedError = Nothing
     }
 
-mockHtmlCache :: HtmlCache
-mockHtmlCache = renderPayload ET.mockPayload
+-- mockHtmlCache :: HtmlCache
+-- mockHtmlCache = renderPayload ET.mockPayload
 
-renderPayload :: ET.Payload -> HtmlCache
-renderPayload payload = MkHtmlCache{..}
+renderViewport :: ET.FileError -> RenderedHtml
+renderViewport fileErr = renderHtml $ do
+  let err = ET.errorMsg fileErr
+  div ! class_ "error-heading" $ do
+    span ! class_ "file-path" $
+      toMarkup . decodeUtf8 $ ET.filepath fileErr
+    span ! class_ "location" $ renderLocation (ET.fileLocation err)
+  div ! class_ "error-body" $
+    toMarkup . decodeUtf8 $ ET.body err
+
+renderSidebar :: ErrorCache -> RenderedHtml
+renderSidebar errorCache = renderHtml $ do
+  div ! class_ "errors-list" $
+    void . (`evalStateT` 0)
+      . traverse fileGroup
+      $ fileErrors errorCache
   where
-    viewportHtml = IM.fromList . zip [0..] $ do
-      fileErr <- ET.fileErrors payload
-      err <- ET.errors fileErr
-      pure . renderHtml $ do
-        div ! class_ "error-heading" $ do
-          span ! class_ "file-path" $
-            toMarkup . decodeUtf8 $ ET.filepath fileErr
-          span ! class_ "location" $ renderLocation (ET.fileLocation err)
-        div ! class_ "error-body" $
-          toMarkup . decodeUtf8 $ ET.body err
-
-    sidebarHtml = renderHtml $ do
-      div ! class_ "errors-list" $
-        void . (`evalStateT` 0) . traverse fileGroup $ ET.fileErrors payload
-
-    fileGroup fileErrors = do
-      errHtml <- traverse (state . errorHtml) (ET.errors fileErrors)
+    fileGroup fErrors = do
+      let curSelected = selectedError errorCache
+          fileName = foldMap (ET.filename . fst) $ listToMaybe fErrors
+      errHtml <- traverse (state . errorHtml curSelected)
+                          (fst <$> fErrors)
       lift $
         div ! class_ "file-group" $ do
-          span ! class_ "file-name" $ toMarkup (decodeUtf8 $ ET.filename fileErrors)
+          span ! class_ "file-name" $
+            toMarkup (decodeUtf8 fileName)
           div ! class_ "errors-for-file" $
             mconcat errHtml
 
-errorHtml :: ET.ErrorMsg -> Int -> (Html, Int)
-errorHtml errMsg errIdx = do
-  let clss = case ET.errorType errMsg of
+errorHtml :: Maybe ErrorId -> ET.FileError -> Word -> (Html, Word)
+errorHtml mCurSelected fileError errIdx = do
+  let errMsg = ET.errorMsg fileError
+      clss = case ET.errorType errMsg of
                ET.Error -> "error"
                ET.Warning -> "error warning"
-      clss' = if errIdx == 0
+      clss' = if mCurSelected == Just (ET.filepath fileError, errIdx)
                  then clss <> " selected"
                  else clss
-   in ( div ! class_ clss' ! dataAttribute "index" (toValue errIdx) $ do
+      ixAttr = toValue (decodeUtf8 $ ET.filepath fileError)
+            <> "-"
+            <> toValue errIdx
+   in ( div ! class_ clss' ! dataAttribute "index" ixAttr $ do
           span ! class_ "location" $ renderLocation (ET.fileLocation errMsg)
           div ! class_ "error-preview" $ renderErrorPreview (ET.body errMsg)
       , errIdx + 1

@@ -47,7 +47,6 @@ executable erriscope-server
                       http-types,
                       file-embed,
                       erriscope-types,
-                      erriscope,
                       bytestring,
                       containers,
                       text,

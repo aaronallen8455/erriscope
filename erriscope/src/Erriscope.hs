@@ -1,17 +1,31 @@
+{-# LANGUAGE LambdaCase #-}
 module Erriscope
   ( plugin
   ) where
 
 import           Control.Concurrent.MVar
 import           Control.Monad.IO.Class
+import qualified Data.ByteString.Char8 as BS8
+import qualified Data.Map.Strict as M
+import qualified Network.Socket as S
 import qualified Network.WebSockets as WS
+import qualified Network.WebSockets.Stream as Stream
 import           System.IO.Unsafe
 
 import qualified Erriscope.Internal.GhcFacade as Ghc
+import qualified Erriscope.Types as ET
 
-{-# NOINLINE socketMVar #-}
-socketMVar :: MVar (Maybe WS.Connection)
-socketMVar = unsafePerformIO $ newMVar Nothing
+{-# NOINLINE connMVar #-}
+connMVar :: MVar (Maybe WS.Connection)
+connMVar = unsafePerformIO $ newMVar Nothing
+
+data ModuleState
+  = ToBeParsed -- ^ Parsing not complete
+  | DoneParsing -- ^ Parse phase has completed
+
+{-# NOINLINE knownFilesMVar #-}
+knownFilesMVar :: MVar (M.Map ET.FilePath ModuleState)
+knownFilesMVar = unsafePerformIO $ newMVar mempty
 
 plugin :: Ghc.Plugin
 plugin = Ghc.defaultPlugin
@@ -21,24 +35,150 @@ plugin = Ghc.defaultPlugin
   , Ghc.parsedResultAction = const parsedResult
   }
 
+-- | Overrides the log action and the phase hook.
 driverPlugin :: [Ghc.CommandLineOption] -> Ghc.DynFlags -> IO Ghc.DynFlags
 driverPlugin _opts dynFlags = do
-  -- initialize websocket if needed
+  -- TODO get port from opts
+  initializeWebsocket 9160
 
   putStrLn "Driver plugin"
   pure dynFlags
---     { -- Ghc.log_action = undefined -- broadcastError
---     }
+    { Ghc.log_action = \dflags warnReason severity srcSpan msgDoc -> do
+        reportError dflags warnReason severity srcSpan msgDoc
+        Ghc.log_action dynFlags dflags warnReason severity srcSpan msgDoc
+    , Ghc.hooks = (Ghc.hooks dynFlags)
+        { Ghc.runPhaseHook = Just $ \phase filePath dflags -> do
+            case phase of
+              Ghc.RealPhase (Ghc.Cpp _) ->
+                -- The CPP phase runs at the beginning of compiling a module.
+                -- Use it to reset the state of that module.
+                liftIO $ modifyMVar_ knownFilesMVar $
+                  pure . M.insert (BS8.pack filePath) ToBeParsed
+                -- TODO delete errors for file here rather than parse phase.
+                -- and then it doesn't matter what phase we're in.
+                -- will just need to do the pruning here instead.
+                -- much simpler!
+              _ -> pure ()
+            Ghc.runPhase phase filePath dflags
+        }
+    }
 
+-- | Opens the websocket connection
+initializeWebsocket :: Int -> IO ()
+initializeWebsocket port =
+  modifyMVar_ connMVar $ \case
+    Just conn -> pure (Just conn)
+    Nothing -> do
+      -- Create and connect socket
+      let hints = S.defaultHints {S.addrSocketType = S.Stream}
+          -- Correct host and path.
+          host = "localhost"
+          fullHost = if port == 80 then host else host ++ ":" ++ show port
+      addr:_ <- S.getAddrInfo (Just hints) (Just host) (Just $ show port)
+      sock   <- S.socket (S.addrFamily addr) S.Stream S.defaultProtocol
+      S.setSocketOption sock S.NoDelay 1
+      -- TODO does the stream need to be closed when application shuts down?
+      -- Could use `mkWeakMVar`
+      stream <- Stream.makeSocketStream sock
+
+      Just <$>
+        WS.newClientConnection
+          stream
+          fullHost
+          "/"
+          WS.defaultConnectionOptions
+          []
+
+-- | When a module completes type checking, don't need to clear errors because
+-- that already happened when parse phase finished. We do need to change the
+-- file state back to ToBeParsed. Also check for deleted files
 typeCheckResult :: Ghc.ModSummary -> a -> Ghc.TcM a
-typeCheckResult mod x = do
-  liftIO $ putStrLn "Type Checking finished"
-  pure x
+typeCheckResult modSum x
+  | Just srcFilePath <- fmap BS8.pack . Ghc.ml_hs_file $ Ghc.ms_location modSum
+  = do
+    liftIO $ putStrLn "typeCheckResult"
+    liftIO $ modifyMVar_ knownFilesMVar $
+      pure . M.insert srcFilePath ToBeParsed
+    -- TODO prune deleted files
+    pure x
+  | otherwise = pure x
 
-parsedResult :: Ghc.ModSummary -> a -> Ghc.Hsc a
-parsedResult mod x = do
-  liftIO $ putStrLn "Parsing finished"
-  pure x
+-- | If a module passes the parsing phase then clear any existing errors for
+-- this file on the server and set the state of this module to DoneParsing
+parsedResult :: MonadIO m => Ghc.ModSummary -> a -> m a
+parsedResult modSum x
+  | Just srcFilePath <- fmap BS8.pack . Ghc.ml_hs_file $ Ghc.ms_location modSum
+  = do
+    liftIO $ putStrLn "parsedResult"
+    -- clear existing errors for this file
+    liftIO $ withMVar connMVar $ \case
+      Nothing -> pure () -- shouldn't happen
+      Just conn -> do
+        let msg = ET.MkEnvelope
+                { ET.version = 0
+                , ET.message = ET.DeleteFile srcFilePath
+                }
+        WS.sendBinaryData conn (ET.encodeEnvelope msg)
+        -- Set state to DoneParsing
+        modifyMVar_ knownFilesMVar $
+          pure . M.insert srcFilePath DoneParsing
+    pure x
+  | otherwise = pure x
+
+
+-- | Send error message to server, reset module state, and prune deleted files
+reportError :: Ghc.LogAction
+reportError dynFlags _warnReason severity srcSpan msgDoc
+  | Ghc.RealSrcSpan rss _ <- srcSpan
+  , Just errType <- getErrorType severity
+  = do
+    let modFile = Ghc.bytesFS $ Ghc.srcSpanFile rss
+        fileErr = ET.MkFileError
+          { ET.filename = BS8.pack "remove this"
+          , ET.filepath = modFile
+          , ET.errorMsg = ET.MkErrorMsg
+            { ET.body = errBody
+            , ET.errorType = errType
+            , ET.fileLocation = loc
+            }
+          }
+        errBody = BS8.pack
+                $ Ghc.showSDocForUser dynFlags Ghc.alwaysQualify msgDoc
+        loc = ET.MkLocation
+          { ET.lineNum = fromIntegral $ Ghc.srcSpanStartLine rss
+          , ET.colNum = fromIntegral $ Ghc.srcSpanStartCol rss
+          }
+        errorMessage =
+          ET.MkEnvelope
+            { ET.version = 0
+            , ET.message = ET.AddError fileErr
+            }
+
+    modifyMVar_ knownFilesMVar $ \knownFiles ->
+      withMVar connMVar $ \case
+        Nothing -> pure knownFiles
+        Just conn ->
+          case M.lookup modFile knownFiles of
+            Just DoneParsing -> do
+              WS.sendBinaryData conn (ET.encodeEnvelope errorMessage)
+              pure knownFiles
+            _ -> do -- must be in parsing phase
+              let deleteMsg = ET.MkEnvelope
+                    { ET.version = 0
+                    , ET.message = ET.DeleteFile modFile
+                    }
+              liftIO $ do
+                WS.sendBinaryData conn (ET.encodeEnvelope deleteMsg)
+                WS.sendBinaryData conn (ET.encodeEnvelope errorMessage)
+              pure $ M.insert modFile ToBeParsed knownFiles
+
+    -- TODO prune deleted files
+  | otherwise = pure ()
+  where
+    getErrorType = \case
+      Ghc.SevWarning -> Just ET.Warning
+      Ghc.SevError   -> Just ET.Error
+      _              -> Nothing
 
 -- since the log action deals with one error at a time, add them to a queue and
 -- flush on some other compilation stage, although don't think such a phase
@@ -85,3 +225,49 @@ parsedResult mod x = do
 -- timer based heuristic? Can you have more than one parse error for the same
 -- module? seems like it would halt at that point?
 -- Yes, seems like it's just one parse error at a time.
+--
+-- Need to check for files being deleted. How should this happen? The simple
+-- solution to check for the existence of each known file during plugin
+-- initilization. This would occur before compiling each module, which is wasteful
+-- but the only other option is to have some heuristic on how much time has passed
+-- since errors were added or removed.
+--
+-- What about this: When error is received for a known file, clear out all the
+-- errors (so that there no other known files). The trick is that when a second
+-- error is received for that file, we don't want to clear it again. This can
+-- be achieved by checking if the same file for which the last error was received.
+-- This breaks down in the case where errors for multiple files are emitted
+-- concurrently, which can happen when compiling with -j. Do errors get interleaved
+-- when compiling concurrently? I'm thinking they don't... This method doesn't
+-- work anyways - new files can be added in such a way that the clearing would
+-- happen in a poor way. Not necessarily, if we only clear the files that were
+-- not compiled since the last time the known file was compiled then that should
+-- be OK. This is all predicated on errors not being emitted concurrently - seems
+-- like it could happen... Can just check if there are existing errors for that
+-- file because existing errors would have been cleared out during the parsing
+-- phase so if there is 1 or more error then don't clear other files.
+-- Could use the file clear occuring at completion of parse phase or emission
+-- of parse phase as the signal to clear other files.
+--
+-- Is there a way to tell that an error occurred during parsing? Could simply
+-- check the error body for certain characteristics. Best option seems to be
+-- inspecting the error message to see if it's a parse error.
+--
+-- So heres the outline of what can happen
+--
+-- - Error occurs during parsing: Check if the error is a parse failure. If
+-- so, clear existing errors for that module then emit the new one.
+-- - Module completes the parse phase: Clear existing errors for this module
+-- - Error occurs during type checking: Check if error is a parse failure.
+-- If not, don't clear errors for this module and emit the new error.
+-- - Type checking completes: Clear errors for this module.
+--
+-- Now to take care of files being deleted:
+-- Brute force option is to check for files that no longer exist at each plugin
+-- initialization (start of a module compilation). This may be the only truly
+-- reliable option given the complications arising from parallel compilation.
+-- Since there aren't likely to be a huge number of files with errors, it seems
+-- reasonable to prune deleted files each time the plugin initialization occurs.
+--
+-- When socket initializes, send a message to clear any existing errors on the
+-- server.

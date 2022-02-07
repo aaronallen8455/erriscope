@@ -1,90 +1,85 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE RecordWildCards #-}
 module Erriscope.Types
-  ( Payload(..)
-  , mockPayload
-  , FileErrors(..)
+  ( Envelope(..)
+  , Message(..)
+  , FileError(..)
   , ErrorMsg(..)
   , ErrorType(..)
   , Location(..)
-  , encodePayload
-  , decodePayload
+  , FilePath
+  , encodeEnvelope
+  , decodeEnvelope
   ) where
 
 import qualified Data.ByteString as BS
 import           Data.Serialize
 import           Data.Word
+import           Prelude hiding (FilePath)
 import           Safe
 
-data Payload =
-  MkPayload
+type File = BS.ByteString
+type FilePath = BS.ByteString
+type ErrorBody = BS.ByteString
+
+data Envelope =
+  MkEnvelope
     { version :: Int
       -- ^ Allows an incompatibility between the plugin and server to be detected
-    , fileErrors :: [FileErrors]
+    , message :: Message
     }
 
-mockPayload :: Payload
-mockPayload =
-  MkPayload
-    { version = 0
-    , fileErrors =
-      [ MkFileErrors
-        { filename = "TestFile1"
-        , filepath = "src/TestFile1.hs"
-        , errors =
-          [ MkErrorMsg
-            { body = "Error body"
-            , errorType = Error
-            , fileLocation =
-              MkLocation
-                { lineNum = 1
-                , colNum = 1
-                }
-            }
-          , MkErrorMsg
-            { body = "Error body 2"
-            , errorType = Error
-            , fileLocation =
-              MkLocation
-                { lineNum = 2
-                , colNum = 2
-                }
-            }
-          ]
-        }
-      ]
-    }
-
-encodePayload :: Payload -> BS.ByteString
-encodePayload = encode
-
-decodePayload :: BS.ByteString -> Either String Payload
-decodePayload = decode
-
-instance Serialize Payload where
-  put MkPayload{..} =
-    put (fileErrors, version)
+instance Serialize Envelope where
+  put MkEnvelope{..} = put (version, message)
   get = do
-    (fileErrors, version) <- get
-    pure MkPayload{..}
+    (version, message) <- get
+    pure MkEnvelope{..}
 
-data FileErrors =
-  MkFileErrors
-    { filename :: BS.ByteString
-    , filepath :: BS.ByteString
-    , errors :: [ErrorMsg]
+data Message
+  = AddError FileError -- Add an error
+  | DeleteFile FilePath -- Remove all existing errors for a file
+  | DeleteAll
+
+instance Serialize Message where
+  put (AddError fileError) = do
+    put (0 :: Word8)
+    put fileError
+  put (DeleteFile file) = do
+    put (1 :: Word8)
+    put file
+  put DeleteAll = do
+    put (2 :: Word8)
+  get = do
+    get @Word8 >>= \case
+      0 -> AddError <$> get
+      1 -> DeleteFile <$> get
+      2 -> pure DeleteAll
+      _ -> fail "Unable to decode Message"
+
+encodeEnvelope :: Envelope -> BS.ByteString
+encodeEnvelope = encode
+
+decodeEnvelope :: BS.ByteString -> Either String Envelope
+decodeEnvelope = decode
+
+data FileError =
+  MkFileError
+    { filename :: File
+    , filepath :: FilePath
+    , errorMsg :: ErrorMsg
     }
 
-instance Serialize FileErrors where
-  put MkFileErrors{..} = put (filename, filepath, errors)
+instance Serialize FileError where
+  put MkFileError{..} = put (filename, filepath, errorMsg)
   get = do
-    (filename, filepath, errors) <- get
-    pure MkFileErrors{..}
+    (filename, filepath, errorMsg) <- get
+    pure MkFileError{..}
 
 data ErrorMsg =
   MkErrorMsg
-    { body :: BS.ByteString
+    { body :: ErrorBody
     , errorType :: ErrorType
     , fileLocation :: Location
     }

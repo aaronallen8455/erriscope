@@ -8,6 +8,7 @@ import           Control.Exception (finally)
 import           Control.Monad
 import qualified Data.ByteString as BS
 import           Data.Foldable
+import qualified Data.Map.Strict as M
 import qualified Data.IntMap.Strict as IM
 import qualified Network.WebSockets as WS
 
@@ -18,23 +19,13 @@ type ClientId = Int
 type Client = WS.Connection
 type Clients = IM.IntMap Client
 
--- | Renders the HTML for a payload and distributes it to the clients.
-broadcastPayload :: ET.Payload -> MVar HtmlCache -> MVar Clients -> IO ()
-broadcastPayload payload htmlCacheMVar clientsMVar = do
-  let newHtmlCache = renderPayload payload
-  putMVar htmlCacheMVar newHtmlCache
-
-  withMVar clientsMVar $ \clients -> do
-    for_ clients $ \conn ->
-      WS.sendTextData conn (sidebarHtml newHtmlCache)
-
-runWebsocket :: MVar HtmlCache -> IO ()
-runWebsocket htmlMVar = do
+runWebsocket :: MVar ErrorCache -> IO ()
+runWebsocket errorsMVar = do
   clients <- newMVar mempty
-  WS.runServer "127.0.0.1" 9160 $ serverApp htmlMVar clients
+  WS.runServer "127.0.0.1" 9160 $ serverApp errorsMVar clients
 
-serverApp :: MVar HtmlCache -> MVar Clients -> WS.ServerApp
-serverApp htmlMVar clientsMVar pending = do
+serverApp :: MVar ErrorCache -> MVar Clients -> WS.ServerApp
+serverApp errorsMVar clientsMVar pending = do
   conn <- WS.acceptRequest pending
   connType <- WS.receiveData conn :: IO BS.ByteString
   case connType of
@@ -42,19 +33,51 @@ serverApp htmlMVar clientsMVar pending = do
               . (`finally` pure ())
               . forever $ do
       msg <- WS.receiveData conn
-      case ET.decodePayload msg of
+      case ET.decodeEnvelope msg of
         Left err -> putStrLn $ "Decoding error: " <> err
-        Right payload -> broadcastPayload payload htmlMVar clientsMVar
+        Right (ET.MkEnvelope _ m) -> handleMessage errorsMVar clientsMVar m
 
     "frontend" -> do
       clientId <- addClient conn clientsMVar
       -- send current sidebar html to new client
-      sendHtmlToClient htmlMVar clientsMVar clientId
+      sendSidebarHtmlToClient errorsMVar conn
       let disconnect = removeClient clientId clientsMVar
       WS.withPingThread conn 30 (pure ()) . (`finally` disconnect) $
         forever . void $ WS.receiveData @BS.ByteString conn
 
     _ -> WS.sendClose conn ("invalid connection type" :: BS.ByteString)
+
+handleMessage :: MVar ErrorCache -> MVar Clients -> ET.Message -> IO ()
+handleMessage errorsMVar clientsMVar message = do
+  modifyMVar_ errorsMVar $ \errors ->
+    case message of
+      ET.AddError fileError -> do
+        let html = renderViewport fileError
+            entry = (fileError, html)
+        pure errors
+          { fileErrors =
+              M.alter (Just . maybe [entry] (++ [entry]))
+                      (ET.filepath fileError)
+                      (fileErrors errors)
+          }
+      ET.DeleteFile filePath ->
+        pure errors
+          { fileErrors = M.delete filePath $ fileErrors errors }
+      ET.DeleteAll ->
+        pure errors
+          { fileErrors = mempty
+          , selectedError = Nothing
+          }
+
+  -- transmit to all clients
+  withMVar clientsMVar . traverse_
+    $ sendSidebarHtmlToClient errorsMVar
+
+-- | Renders the sidebar content and sends it to all clients
+sendSidebarHtmlToClient :: MVar ErrorCache -> WS.Connection -> IO ()
+sendSidebarHtmlToClient errorsMVar conn =
+  withMVar errorsMVar $ \errors ->
+    WS.sendTextData conn $ renderSidebar errors
 
 addClient :: WS.Connection -> MVar Clients -> IO ClientId
 addClient conn clientsMVar =
@@ -65,10 +88,3 @@ addClient conn clientsMVar =
 removeClient :: ClientId -> MVar Clients -> IO ()
 removeClient clientId clientsMVar =
   modifyMVar_ clientsMVar $ pure . IM.delete clientId
-
-sendHtmlToClient :: MVar HtmlCache -> MVar Clients -> ClientId -> IO ()
-sendHtmlToClient htmlMVar clientsMVar clientId =
-  withMVar htmlMVar $ \htmlCache ->
-    withMVar clientsMVar $ \clients ->
-      for_ (IM.lookup clientId clients) $ \conn ->
-        WS.sendTextData conn $ sidebarHtml htmlCache
