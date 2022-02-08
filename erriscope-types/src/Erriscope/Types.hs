@@ -10,6 +10,7 @@ module Erriscope.Types
   , ErrorType(..)
   , Location(..)
   , FilePath
+  , ModuleName
   , encodeEnvelope
   , decodeEnvelope
   ) where
@@ -20,7 +21,7 @@ import           Data.Word
 import           Prelude hiding (FilePath)
 import           Safe
 
-type File = BS.ByteString
+type ModuleName = BS.ByteString
 type FilePath = BS.ByteString
 type ErrorBody = BS.ByteString
 
@@ -66,15 +67,15 @@ decodeEnvelope = decode
 
 data FileError =
   MkFileError
-    { filename :: File
+    { moduleName :: Maybe ModuleName
     , filepath :: FilePath
     , errorMsg :: ErrorMsg
     }
 
 instance Serialize FileError where
-  put MkFileError{..} = put (filename, filepath, errorMsg)
+  put MkFileError{..} = put (moduleName, filepath, errorMsg)
   get = do
-    (filename, filepath, errorMsg) <- get
+    (moduleName, filepath, errorMsg) <- get
     pure MkFileError{..}
 
 data ErrorMsg =

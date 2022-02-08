@@ -3,9 +3,12 @@ module Erriscope
   ( plugin
   ) where
 
+import           Control.Applicative
 import           Control.Concurrent.MVar
+import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.ByteString.Char8 as BS8
+import           Data.Foldable
 import qualified Data.Map.Strict as M
 import qualified Network.Socket as S
 import qualified Network.WebSockets as WS
@@ -19,19 +22,14 @@ import qualified Erriscope.Types as ET
 connMVar :: MVar (Maybe WS.Connection)
 connMVar = unsafePerformIO $ newMVar Nothing
 
-data ModuleState
-  = ToBeParsed -- ^ Parsing not complete
-  | DoneParsing -- ^ Parse phase has completed
-
 {-# NOINLINE knownFilesMVar #-}
-knownFilesMVar :: MVar (M.Map ET.FilePath ModuleState)
+knownFilesMVar :: MVar (M.Map ET.FilePath (Maybe ET.ModuleName))
 knownFilesMVar = unsafePerformIO $ newMVar mempty
 
 plugin :: Ghc.Plugin
 plugin = Ghc.defaultPlugin
   { Ghc.dynflagsPlugin = driverPlugin
   , Ghc.pluginRecompile = Ghc.purePlugin
-  , Ghc.typeCheckResultAction = const typeCheckResult
   , Ghc.parsedResultAction = const parsedResult
   }
 
@@ -41,6 +39,8 @@ driverPlugin _opts dynFlags = do
   -- TODO get port from opts
   initializeWebsocket 9160
 
+  deleteAll
+
   putStrLn "Driver plugin"
   pure dynFlags
     { Ghc.log_action = \dflags warnReason severity srcSpan msgDoc -> do
@@ -49,19 +49,37 @@ driverPlugin _opts dynFlags = do
     , Ghc.hooks = (Ghc.hooks dynFlags)
         { Ghc.runPhaseHook = Just $ \phase filePath dflags -> do
             case phase of
-              Ghc.RealPhase (Ghc.Cpp _) ->
+              Ghc.RealPhase (Ghc.Cpp hscSrc) ->
                 -- The CPP phase runs at the beginning of compiling a module.
-                -- Use it to reset the state of that module.
-                liftIO $ modifyMVar_ knownFilesMVar $
-                  pure . M.insert (BS8.pack filePath) ToBeParsed
-                -- TODO delete errors for file here rather than parse phase.
-                -- and then it doesn't matter what phase we're in.
-                -- will just need to do the pruning here instead.
-                -- much simpler!
+                liftIO $ beginCompilation (BS8.pack filePath) hscSrc
               _ -> pure ()
             Ghc.runPhase phase filePath dflags
         }
     }
+
+-- | When a module starts compiling, delete all existing errors for the file
+-- and also prune deleted files.
+beginCompilation :: ET.FilePath -> Ghc.HscSource -> IO ()
+beginCompilation modFile Ghc.HsSrcFile = do
+  withMVar connMVar $ traverse_ $ \conn -> do
+    let deleteMsg = ET.MkEnvelope
+          { ET.version = 0
+          , ET.message = ET.DeleteFile modFile
+          }
+    WS.sendBinaryData conn (ET.encodeEnvelope deleteMsg)
+    modifyMVar_ knownFilesMVar $
+      pure . M.insertWith (<|>) modFile Nothing
+  pruneDeletedFiles
+beginCompilation _ _ = pure ()
+
+-- | Check for any known files that have been deleted and remove it from the
+-- server and known files map.
+pruneDeletedFiles :: IO ()
+pruneDeletedFiles = do
+  undefined
+  -- Check if file exists
+  -- send deleteAll message
+  -- Remove from knownFiles
 
 -- | Opens the websocket connection
 initializeWebsocket :: Int -> IO ()
@@ -78,7 +96,7 @@ initializeWebsocket port =
       sock   <- S.socket (S.addrFamily addr) S.Stream S.defaultProtocol
       S.setSocketOption sock S.NoDelay 1
       -- TODO does the stream need to be closed when application shuts down?
-      -- Could use `mkWeakMVar`
+      -- Could use `mkWeakMVar` if so
       stream <- Stream.makeSocketStream sock
 
       Just <$>
@@ -89,52 +107,40 @@ initializeWebsocket port =
           WS.defaultConnectionOptions
           []
 
--- | When a module completes type checking, don't need to clear errors because
--- that already happened when parse phase finished. We do need to change the
--- file state back to ToBeParsed. Also check for deleted files
-typeCheckResult :: Ghc.ModSummary -> a -> Ghc.TcM a
-typeCheckResult modSum x
+-- | If a module passes the parsing phase then we get its proper name
+parsedResult :: MonadIO m
+             => Ghc.ModSummary
+             -> Ghc.HsParsedModule
+             -> m Ghc.HsParsedModule
+parsedResult modSum parsedMod
   | Just srcFilePath <- fmap BS8.pack . Ghc.ml_hs_file $ Ghc.ms_location modSum
   = do
-    liftIO $ putStrLn "typeCheckResult"
-    liftIO $ modifyMVar_ knownFilesMVar $
-      pure . M.insert srcFilePath ToBeParsed
-    -- TODO prune deleted files
-    pure x
-  | otherwise = pure x
+    let mModName = fmap (Ghc.bytesFS . Ghc.moduleNameFS . Ghc.unLoc)
+                 . Ghc.hsmodName . Ghc.unLoc
+                 $ Ghc.hpm_module parsedMod
 
--- | If a module passes the parsing phase then clear any existing errors for
--- this file on the server and set the state of this module to DoneParsing
-parsedResult :: MonadIO m => Ghc.ModSummary -> a -> m a
-parsedResult modSum x
-  | Just srcFilePath <- fmap BS8.pack . Ghc.ml_hs_file $ Ghc.ms_location modSum
-  = do
-    liftIO $ putStrLn "parsedResult"
-    -- clear existing errors for this file
-    liftIO $ withMVar connMVar $ \case
-      Nothing -> pure () -- shouldn't happen
-      Just conn -> do
-        let msg = ET.MkEnvelope
-                { ET.version = 0
-                , ET.message = ET.DeleteFile srcFilePath
-                }
-        WS.sendBinaryData conn (ET.encodeEnvelope msg)
-        -- Set state to DoneParsing
-        modifyMVar_ knownFilesMVar $
-          pure . M.insert srcFilePath DoneParsing
-    pure x
-  | otherwise = pure x
+    liftIO . modifyMVar_ knownFilesMVar $
+      pure . M.insert srcFilePath mModName
+    pure parsedMod
+  | otherwise = pure parsedMod
 
-
--- | Send error message to server, reset module state, and prune deleted files
+-- | Send error message to server
 reportError :: Ghc.LogAction
 reportError dynFlags _warnReason severity srcSpan msgDoc
   | Ghc.RealSrcSpan rss _ <- srcSpan
   , Just errType <- getErrorType severity
   = do
     let modFile = Ghc.bytesFS $ Ghc.srcSpanFile rss
+    mModName <- fmap join . withMVar knownFilesMVar
+              $ pure . M.lookup modFile
+    let errBody = BS8.pack
+                $ Ghc.showSDocForUser dynFlags Ghc.alwaysQualify msgDoc
+        loc = ET.MkLocation
+          { ET.lineNum = fromIntegral $ Ghc.srcSpanStartLine rss
+          , ET.colNum = fromIntegral $ Ghc.srcSpanStartCol rss
+          }
         fileErr = ET.MkFileError
-          { ET.filename = BS8.pack "remove this"
+          { ET.moduleName = mModName
           , ET.filepath = modFile
           , ET.errorMsg = ET.MkErrorMsg
             { ET.body = errBody
@@ -142,43 +148,32 @@ reportError dynFlags _warnReason severity srcSpan msgDoc
             , ET.fileLocation = loc
             }
           }
-        errBody = BS8.pack
-                $ Ghc.showSDocForUser dynFlags Ghc.alwaysQualify msgDoc
-        loc = ET.MkLocation
-          { ET.lineNum = fromIntegral $ Ghc.srcSpanStartLine rss
-          , ET.colNum = fromIntegral $ Ghc.srcSpanStartCol rss
-          }
         errorMessage =
           ET.MkEnvelope
             { ET.version = 0
             , ET.message = ET.AddError fileErr
             }
 
-    modifyMVar_ knownFilesMVar $ \knownFiles ->
-      withMVar connMVar $ \case
-        Nothing -> pure knownFiles
-        Just conn ->
-          case M.lookup modFile knownFiles of
-            Just DoneParsing -> do
-              WS.sendBinaryData conn (ET.encodeEnvelope errorMessage)
-              pure knownFiles
-            _ -> do -- must be in parsing phase
-              let deleteMsg = ET.MkEnvelope
-                    { ET.version = 0
-                    , ET.message = ET.DeleteFile modFile
-                    }
-              liftIO $ do
-                WS.sendBinaryData conn (ET.encodeEnvelope deleteMsg)
-                WS.sendBinaryData conn (ET.encodeEnvelope errorMessage)
-              pure $ M.insert modFile ToBeParsed knownFiles
+    withMVar connMVar $ traverse_ $ \conn ->
+      WS.sendBinaryData conn (ET.encodeEnvelope errorMessage)
 
-    -- TODO prune deleted files
   | otherwise = pure ()
   where
     getErrorType = \case
       Ghc.SevWarning -> Just ET.Warning
       Ghc.SevError   -> Just ET.Error
       _              -> Nothing
+
+-- | Send a message to delete all existing errors on the server.
+deleteAll :: IO ()
+deleteAll = do
+  let msg = ET.MkEnvelope
+        { ET.version = 0
+        , ET.message = ET.DeleteAll
+        }
+
+  withMVar connMVar $ \mConn -> for_ mConn $ \conn ->
+    WS.sendBinaryData conn (ET.encodeEnvelope msg)
 
 -- since the log action deals with one error at a time, add them to a queue and
 -- flush on some other compilation stage, although don't think such a phase

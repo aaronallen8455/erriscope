@@ -6,11 +6,13 @@ module Erriscope.Html
   , parseErrorId
   ) where
 
+import           Control.Applicative
 import           Control.Monad
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.State.Strict
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Char8 as BS8
+import           Data.Foldable
 import qualified Data.Map.Strict as M
 import           Data.Maybe
 import qualified Data.Text as T
@@ -77,13 +79,15 @@ renderSidebar errorCache = renderHtml $ do
   where
     fileGroup fErrors = do
       let curSelected = selectedError errorCache
-          fileName = foldMap (ET.filename . fst) $ listToMaybe fErrors
+          mFError = fst <$> listToMaybe fErrors
+          mModName = (ET.moduleName =<< mFError)
+                 <|> (ET.filepath <$> mFError)
       errHtml <- traverse (state . errorHtml curSelected)
                           (fst <$> fErrors)
       lift $
         div ! class_ "file-group" $ do
           span ! class_ "file-name" $
-            toMarkup (decodeUtf8 fileName)
+            toMarkup (decodeUtf8 $ fold mModName)
           div ! class_ "errors-for-file" $
             mconcat errHtml
 

@@ -9,6 +9,7 @@ import GHC.Driver.Pipeline as Ghc
 import GHC.Driver.Plugins as Ghc
 import GHC.Driver.Session as Ghc
 import GHC.Driver.Types as Ghc hiding (Hsc)
+import GHC.Hs as Ghc
 import GHC.Tc.Types as Ghc hiding (TcPlugin)
 import GHC.Types.SrcLoc as Ghc
 import GHC.Utils.Error as Ghc
