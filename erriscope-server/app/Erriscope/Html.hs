@@ -8,11 +8,10 @@ module Erriscope.Html
 
 import           Control.Applicative
 import           Control.Monad
-import           Control.Monad.Trans.Class
-import           Control.Monad.Trans.State.Strict
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Char8 as BS8
 import           Data.Foldable
+import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import           Data.Maybe
 import qualified Data.Text as T
@@ -35,13 +34,13 @@ type RenderedHtml = LBS.ByteString
 -- as a data attribute. The identifier of the selected error can be kept as a
 -- separate field which is used during rendering the sidebar html.
 
-type ErrorId = (ET.FilePath, Word)
+type ErrorId = (Word, ET.FilePath)
 
 parseErrorId :: T.Text -> Maybe ErrorId
 parseErrorId txt
-  | [pathTxt, ixTxt] <- T.split (== '-') txt
+  | [ixTxt, pathTxt] <- T.split (== '-') txt
   , Just ix <- readMaybe $ T.unpack ixTxt
-  = Just (TE.encodeUtf8 pathTxt, ix)
+  = Just (ix, TE.encodeUtf8 $ T.replace "%" "/" pathTxt)
   | otherwise = Nothing
 
 data ErrorCache =
@@ -62,6 +61,7 @@ emptyErrorCache =
 
 renderViewport :: ET.FileError -> RenderedHtml
 renderViewport fileErr = renderHtml $ do
+  -- TODO show whether it's an error or warning
   let err = ET.errorMsg fileErr
   div ! class_ "error-heading" $ do
     span ! class_ "file-path" $
@@ -69,12 +69,13 @@ renderViewport fileErr = renderHtml $ do
     span ! class_ "location" $ renderLocation (ET.fileLocation err)
   div ! class_ "error-body" $
     toMarkup . decodeUtf8 $ ET.body err
+  div ! class_ "error-caret" $
+    toMarkup . decodeUtf8 $ ET.caret err
 
 renderSidebar :: ErrorCache -> RenderedHtml
 renderSidebar errorCache = renderHtml $ do
-  div ! class_ "errors-list" $
-    void . (`evalStateT` 0)
-      . traverse fileGroup
+  div ! class_ "errors-list"
+      $ traverse_ fileGroup
       $ fileErrors errorCache
   where
     fileGroup fErrors = do
@@ -82,32 +83,46 @@ renderSidebar errorCache = renderHtml $ do
           mFError = fst <$> listToMaybe fErrors
           mModName = (ET.moduleName =<< mFError)
                  <|> (ET.filepath <$> mFError)
-      errHtml <- traverse (state . errorHtml curSelected)
-                          (fst <$> fErrors)
-      lift $
-        div ! class_ "file-group" $ do
-          span ! class_ "file-name" $
-            toMarkup (decodeUtf8 $ fold mModName)
-          div ! class_ "errors-for-file" $
-            mconcat errHtml
+          errHtml = fmap (errorHtml curSelected)
+                  . (`zip` [0..])
+                  $ fst <$> fErrors
+      div ! class_ "file-group" $ do
+        span ! class_ "file-name" $
+          toMarkup (decodeUtf8 $ fold mModName)
+        div ! class_ "errors-for-file" $
+          mconcat errHtml
 
-errorHtml :: Maybe ErrorId -> ET.FileError -> Word -> (Html, Word)
-errorHtml mCurSelected fileError errIdx = do
+errorHtml :: Maybe ErrorId -> (ET.FileError, Word) -> Html
+errorHtml mCurSelected (fileError, errIdx) = do
   let errMsg = ET.errorMsg fileError
       clss = case ET.errorType errMsg of
                ET.Error -> "error"
                ET.Warning -> "error warning"
-      clss' = if mCurSelected == Just (ET.filepath fileError, errIdx)
+      clss' = if mCurSelected == Just errorId
                  then clss <> " selected"
                  else clss
-      ixAttr = toValue (decodeUtf8 $ ET.filepath fileError)
-            <> "-"
-            <> toValue errIdx
-   in ( div ! class_ clss' ! dataAttribute "index" ixAttr $ do
+      errorId = mkErrorId fileError errIdx
+      ixAttr = renderErrorId errorId
+      (sevClass, errorTypeTxt)
+        = case ET.errorType errMsg of
+            ET.Error -> ("severity-error", "Error")
+            ET.Warning -> ("severity-warning", "Warning")
+   in div ! class_ clss' ! dataAttribute "index" ixAttr $ do
+        div ! class_ "error-preview-header" $ do
+          span ! class_ ("severity " <> sevClass) $ errorTypeTxt
           span ! class_ "location" $ renderLocation (ET.fileLocation errMsg)
-          div ! class_ "error-preview" $ renderErrorPreview (ET.body errMsg)
-      , errIdx + 1
-      )
+        div ! class_ "error-preview" $ renderErrorPreview (ET.body errMsg)
+
+mkErrorId :: ET.FileError -> Word -> ErrorId
+mkErrorId err idx =
+  ( idx
+  -- replace '/' so that it can be used as a url param
+  , mconcat . List.intersperse "%" . BS8.split '/' $ ET.filepath err
+  )
+
+renderErrorId :: ErrorId -> AttributeValue
+renderErrorId (idx, path)
+  = toValue idx <> "-" <> toValue (decodeUtf8 path)
 
 renderLocation :: ET.Location -> Html
 renderLocation loc =

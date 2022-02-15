@@ -81,15 +81,16 @@ instance Serialize FileError where
 data ErrorMsg =
   MkErrorMsg
     { body :: ErrorBody
+    , caret :: BS.ByteString
     , errorType :: ErrorType
     , fileLocation :: Location
     }
 
 instance Serialize ErrorMsg where
   put MkErrorMsg{..} =
-    put (body, errorType, fileLocation)
+    put (body, caret, errorType, fileLocation)
   get = do
-    (body, errorType, fileLocation) <- get
+    (body, caret, errorType, fileLocation) <- get
     pure MkErrorMsg{..}
 
 data ErrorType

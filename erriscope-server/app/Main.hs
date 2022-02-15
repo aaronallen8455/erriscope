@@ -114,8 +114,9 @@ app errorsMVar request respond = do
           Nothing
 
     ["error", errorId]
-      | Just (file, ix) <- parseErrorId errorId
+      | Just (ix, file) <- parseErrorId errorId
       -> do
+        -- TODO update the currently selected error?
         errorCache <- readMVar errorsMVar
         case M.lookup file (fileErrors errorCache) of
           Just errors
@@ -131,6 +132,12 @@ app errorsMVar request respond = do
                 status404
                 [("Content-Type", "text/plain")]
                 "Error index doesn't exist"
+      | otherwise ->
+          respond $
+            responseLBS
+              status200
+              [("Content-Type", "text/plain")]
+              ""
 
     _ ->
       respond $

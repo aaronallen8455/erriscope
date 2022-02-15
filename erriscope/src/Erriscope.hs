@@ -7,12 +7,15 @@ import           Control.Applicative
 import           Control.Concurrent.MVar
 import           Control.Monad
 import           Control.Monad.IO.Class
+import qualified Data.ByteString.Builder as BSB
 import qualified Data.ByteString.Char8 as BS8
+import qualified Data.ByteString.Lazy as BSL
 import           Data.Foldable
 import qualified Data.Map.Strict as M
 import qualified Network.Socket as S
 import qualified Network.WebSockets as WS
 import qualified Network.WebSockets.Stream as Stream
+import qualified System.Directory as Dir
 import           System.IO.Unsafe
 
 import qualified Erriscope.Internal.GhcFacade as Ghc
@@ -49,9 +52,9 @@ driverPlugin _opts dynFlags = do
     , Ghc.hooks = (Ghc.hooks dynFlags)
         { Ghc.runPhaseHook = Just $ \phase filePath dflags -> do
             case phase of
-              Ghc.RealPhase (Ghc.Cpp hscSrc) ->
+              Ghc.RealPhase (Ghc.Cpp _) -> -- TODO do something with the file type?
                 -- The CPP phase runs at the beginning of compiling a module.
-                liftIO $ beginCompilation (BS8.pack filePath) hscSrc
+                liftIO $ beginCompilation (BS8.pack filePath)
               _ -> pure ()
             Ghc.runPhase phase filePath dflags
         }
@@ -59,27 +62,25 @@ driverPlugin _opts dynFlags = do
 
 -- | When a module starts compiling, delete all existing errors for the file
 -- and also prune deleted files.
-beginCompilation :: ET.FilePath -> Ghc.HscSource -> IO ()
-beginCompilation modFile Ghc.HsSrcFile = do
-  withMVar connMVar $ traverse_ $ \conn -> do
-    let deleteMsg = ET.MkEnvelope
-          { ET.version = 0
-          , ET.message = ET.DeleteFile modFile
-          }
-    WS.sendBinaryData conn (ET.encodeEnvelope deleteMsg)
-    modifyMVar_ knownFilesMVar $
-      pure . M.insertWith (<|>) modFile Nothing
+beginCompilation :: ET.FilePath -> IO ()
+beginCompilation modFile = do
+  deleteErrorsForFile modFile
+  modifyMVar_ knownFilesMVar $
+    pure . M.insertWith (<|>) modFile Nothing
   pruneDeletedFiles
-beginCompilation _ _ = pure ()
 
 -- | Check for any known files that have been deleted and remove it from the
 -- server and known files map.
 pruneDeletedFiles :: IO ()
 pruneDeletedFiles = do
-  undefined
-  -- Check if file exists
-  -- send deleteAll message
-  -- Remove from knownFiles
+  knownFiles <- readMVar knownFilesMVar
+  let go filePath _ = do
+        Dir.doesFileExist (BS8.unpack filePath) >>= \case
+          True  -> pure ()
+          False -> do
+            deleteErrorsForFile filePath
+            modifyMVar_ knownFilesMVar $ pure . M.delete filePath
+  void $ M.traverseWithKey go knownFiles
 
 -- | Opens the websocket connection
 initializeWebsocket :: Int -> IO ()
@@ -90,22 +91,27 @@ initializeWebsocket port =
       -- Create and connect socket
       let hints = S.defaultHints {S.addrSocketType = S.Stream}
           -- Correct host and path.
-          host = "localhost"
+          host = "127.0.0.1"
           fullHost = if port == 80 then host else host ++ ":" ++ show port
       addr:_ <- S.getAddrInfo (Just hints) (Just host) (Just $ show port)
       sock   <- S.socket (S.addrFamily addr) S.Stream S.defaultProtocol
       S.setSocketOption sock S.NoDelay 1
+      S.connect sock (S.addrAddress addr)
       -- TODO does the stream need to be closed when application shuts down?
       -- Could use `mkWeakMVar` if so
       stream <- Stream.makeSocketStream sock
 
-      Just <$>
+      -- TODO what if the server is unreachable?
+      conn <-
         WS.newClientConnection
           stream
           fullHost
           "/"
           WS.defaultConnectionOptions
           []
+
+      WS.sendTextData conn (BS8.pack "plugin")
+      pure $ Just conn
 
 -- | If a module passes the parsing phase then we get its proper name
 parsedResult :: MonadIO m
@@ -133,7 +139,9 @@ reportError dynFlags _warnReason severity srcSpan msgDoc
     let modFile = Ghc.bytesFS $ Ghc.srcSpanFile rss
     mModName <- fmap join . withMVar knownFilesMVar
               $ pure . M.lookup modFile
-    let errBody = BS8.pack
+    caret <- Ghc.showSDocForUser dynFlags Ghc.alwaysQualify
+         <$> Ghc.getCaretDiagnostic severity srcSpan
+    let errBody = BSL.toStrict . BSB.toLazyByteString . BSB.stringUtf8
                 $ Ghc.showSDocForUser dynFlags Ghc.alwaysQualify msgDoc
         loc = ET.MkLocation
           { ET.lineNum = fromIntegral $ Ghc.srcSpanStartLine rss
@@ -144,6 +152,8 @@ reportError dynFlags _warnReason severity srcSpan msgDoc
           , ET.filepath = modFile
           , ET.errorMsg = ET.MkErrorMsg
             { ET.body = errBody
+            , ET.caret = BSL.toStrict . BSB.toLazyByteString
+                       $ BSB.stringUtf8 caret
             , ET.errorType = errType
             , ET.fileLocation = loc
             }
@@ -154,7 +164,7 @@ reportError dynFlags _warnReason severity srcSpan msgDoc
             , ET.message = ET.AddError fileErr
             }
 
-    withMVar connMVar $ traverse_ $ \conn ->
+    withMVar connMVar . traverse_ $ \conn ->
       WS.sendBinaryData conn (ET.encodeEnvelope errorMessage)
 
   | otherwise = pure ()
@@ -163,6 +173,16 @@ reportError dynFlags _warnReason severity srcSpan msgDoc
       Ghc.SevWarning -> Just ET.Warning
       Ghc.SevError   -> Just ET.Error
       _              -> Nothing
+
+-- | Remove all errors on the server for a specific file
+deleteErrorsForFile :: ET.FilePath -> IO ()
+deleteErrorsForFile modFile = do
+  withMVar connMVar . traverse_ $ \conn -> do
+    let deleteMsg = ET.MkEnvelope
+          { ET.version = 0
+          , ET.message = ET.DeleteFile modFile
+          }
+    WS.sendBinaryData conn (ET.encodeEnvelope deleteMsg)
 
 -- | Send a message to delete all existing errors on the server.
 deleteAll :: IO ()

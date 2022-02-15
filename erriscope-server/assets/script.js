@@ -2,7 +2,6 @@
 const socketPort = '9160';
 
 // index of the currently selected error message
-let currentlySelectedIdx = 0;
 let selectedElement = null;
 
 window.onload = main;
@@ -25,38 +24,71 @@ function socketOpenHandler(ev) {
   socket.send('frontend');
 }
 
+// Select the first error if there is no currently selected error
+function selectFirstErrorIfNoneSelected(popViewport) {
+  if (selectedElement === null) {
+    const errors = document.getElementsByClassName('error');
+    if (firstError = errors[0]) {
+      selectError(popViewport, firstError);
+    }
+  }
+}
+
+// Cycle forward through errors
+function selectNext(popViewport) {
+  if (selectedElement) {
+    const el = selectedElement.nextElementSibling
+            || selectedElement.parentElement.firstElementChild;
+    selectError(popViewport, el);
+  } else {
+    selectFirstErrorIfNoneSelected(popViewport);
+  }
+}
+
+// Cycle back through errors
+function selectPrev(popViewport) {
+  if (selectedElement) {
+    const el = selectedElement.prevElementSibling
+            || selectedElement.parentElement.lastElementChild;
+    selectError(popViewport, el);
+  } else {
+    selectFirstErrorIfNoneSelected(popViewport);
+  }
+}
+
+// Select the error represented by the given DOM element
+function selectError(popViewport, element) {
+  const idx = element.dataset.index;
+  selectedElement && selectedElement.classList.remove('selected');
+  selectedElement = element
+  element.classList.add('selected');
+  popViewport();
+}
+
 // Handler for socket message event
 function socketMessageHandler(sidebarEl, popViewport, ev) {
   const sidebarHtml = ev.data;
   sidebarEl.innerHTML = sidebarHtml;
-  currentlySelectedIdx = 0;
   // attach handlers
   const previewEls = document.getElementsByClassName('error');
-  selectedElement = previewEls[0];
   Array.from(previewEls, el =>
     el.addEventListener(
       'click',
       previewClickHandler.bind(null, popViewport)
     )
   );
-  // re-render viewport
-  popViewport();
+  selectFirstErrorIfNoneSelected(popViewport);
 }
 
 // Handle click on an error preview. Triggers viewport population.
 function previewClickHandler(popViewport, ev) {
-  const el = ev.currentTarget;
-  const idx = el.dataset.index;
-  el.classList.add('selected');
-  selectedElement && selectedElement.classList.remove('selected');
-  selectedElement = el
-  currentlySelectedIdx = idx;
-  popViewport();
+  selectError(popViewport, ev.currentTarget);
 }
 
 function populateViewport(viewportEl) {
   // make request for html for current selected error
-  const url = '/error/' + currentlySelectedIdx;
+  const selectedId = selectedElement ? selectedElement.dataset.index : "";
+  const url = '/error/' + selectedId;
   const req = new Request(url);
 
   fetch(req)
