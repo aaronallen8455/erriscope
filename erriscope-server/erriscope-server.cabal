@@ -40,7 +40,7 @@ executable erriscope-server
     autogen-modules: Paths_erriscope_server
 
     default-extensions: OverloadedStrings
-    build-depends:    base >=4.15.0.0 && <4.17.0.0,
+    build-depends:    base >=4.14.0.0 && <4.17.0.0,
                       wai,
                       warp,
                       websockets,
