@@ -1,4 +1,6 @@
 module M where
 
 foo :: Int
-foo = "test"
+foo = 1 --"test"
+foo :: ()
+foo = 2 --"test"

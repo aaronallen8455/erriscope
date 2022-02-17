@@ -1,6 +1,5 @@
 module Main where
 
-import           M
 import           Data.List
 
 main :: IO ()

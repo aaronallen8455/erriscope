@@ -29,7 +29,7 @@ html {
 .file-group {
   display: block;
   background-color: #8f4e8b;
-  margin-top: 8px;
+  margin-bottom: 8px;
   padding: 3px;
 }
 
@@ -83,6 +83,14 @@ html {
   margin-right: 10px;
 }
 
+.error-heading .severity {
+  border: 2px solid;
+  border-radius: 7px;
+  padding: 4px 6px 2px 6px;
+  vertical-align: middle;
+  margin-right: 10px;
+}
+
 .severity-error {
   color: #ff0048;
   border-color: #ff0048;
@@ -93,10 +101,15 @@ html {
   border-color: #ea4fd2;
 }
 
-.error .error-preview {
+.error .error-preview-container {
   background-color: #3e3e3e;
+}
+
+.error-preview-container .error-preview {
+  mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
   color: white;
   font-family: monospace;
+  white-space: pre;
   padding: 3px;
   overflow-x: auto;
 }
@@ -111,7 +124,7 @@ html {
 }
 
 .error-heading {
-  font-size: 1.6em;
+  font-size: 1.3em;
   font-weight: bold;
   padding: 20px;
   width: 100%;
@@ -119,8 +132,29 @@ html {
   box-sizing: border-box;
 }
 
+.error-heading .location {
+  font-weight: initial;
+  color: #acacac;
+}
+
 .error-heading > * {
   margin-right: 8px;
+}
+
+.nav-arrows {
+  display: inline-block;
+  transform: scale(1.4) rotate(90deg);
+  color: #acacac;
+}
+
+.nav-arrows > * {
+  display: inline-block;
+  cursor: pointer;
+  transition: color .3s;
+}
+
+.nav-arrows :hover {
+  color: white;
 }
 
 .error-body {
@@ -134,6 +168,7 @@ html {
   padding: 10px;
   box-sizing: border-box;
   overflow-x: auto;
+  font-size: 1.2em;
 }
 
 .error-caret {
@@ -147,3 +182,4 @@ html {
   padding: 10px;
   box-sizing: border-box;
   overflow-x: auto;
+  font-size: 1.2em;

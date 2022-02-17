@@ -1,7 +1,7 @@
 // TODO have this line inserted by the server.
 const socketPort = '9160';
 
-// index of the currently selected error message
+// element of the currently selected error message
 let selectedElement = null;
 
 window.onload = main;
@@ -16,6 +16,22 @@ function main() {
     'message',
     socketMessageHandler.bind(null, sidebarEl, popViewport)
   );
+  window.addEventListener('keydown', keydownHandler.bind(null, popViewport));
+}
+
+function keydownHandler(popViewport, ev) {
+  if (ev.shiftKey) {
+    switch (ev.key) {
+      case "ArrowDown":
+        selectNext(popViewport);
+        ev.preventDefault();
+        break;
+      case "ArrowUp":
+        selectPrev(popViewport);
+        ev.preventDefault();
+        break;
+    }
+  }
 }
 
 // Handler for socket open event
@@ -25,44 +41,50 @@ function socketOpenHandler(ev) {
 }
 
 // Select the first error if there is no currently selected error
-function selectFirstErrorIfNoneSelected(popViewport) {
-  if (selectedElement === null) {
-    const errors = document.getElementsByClassName('error');
-    if (firstError = errors[0]) {
-      selectError(popViewport, firstError);
-    }
+function selectFirstError(popViewport) {
+  const errors = document.getElementsByClassName('error');
+  if (firstError = errors[0]) {
+    selectError(popViewport, firstError);
   }
 }
 
 // Cycle forward through errors
 function selectNext(popViewport) {
-  if (selectedElement) {
-    const el = selectedElement.nextElementSibling
-            || selectedElement.parentElement.firstElementChild;
-    selectError(popViewport, el);
-  } else {
-    selectFirstErrorIfNoneSelected(popViewport);
-  }
+  const errorEls = Array.from(document.getElementsByClassName('error'));
+  const curIdx = errorEls.findIndex(x => x === selectedElement);
+  const newIdx = (curIdx >= errorEls.length - 1) ? 0 : (curIdx + 1);
+  selectError(popViewport, errorEls[newIdx]);
 }
 
 // Cycle back through errors
 function selectPrev(popViewport) {
-  if (selectedElement) {
-    const el = selectedElement.prevElementSibling
-            || selectedElement.parentElement.lastElementChild;
-    selectError(popViewport, el);
-  } else {
-    selectFirstErrorIfNoneSelected(popViewport);
-  }
+  const errorEls = Array.from(document.getElementsByClassName('error'));
+  const curIdx = errorEls.findIndex(x => x === selectedElement);
+  const newIdx = curIdx <= 0 ? (errorEls.length - 1) : (curIdx - 1);
+  selectError(popViewport, errorEls[newIdx]);
 }
 
 // Select the error represented by the given DOM element
 function selectError(popViewport, element) {
-  const idx = element.dataset.index;
-  selectedElement && selectedElement.classList.remove('selected');
-  selectedElement = element
-  element.classList.add('selected');
-  popViewport();
+  if (element !== selectedElement) {
+    selectedElement && selectedElement.classList.remove('selected');
+    selectedElement = element;
+    element.classList.add('selected');
+    popViewport();
+  }
+}
+
+// Reselect the currently selected error after the sidebar has been refreshed
+function reselectError(popViewport) {
+  if (selectedElement) {
+    let errorId = selectedElement.id;
+    let newError = null;
+    if (newError = document.getElementById(errorId)) {
+      selectError(popViewport, newError);
+    }
+  } else {
+    selectFirstError(popViewport);
+  }
 }
 
 // Handler for socket message event
@@ -77,7 +99,7 @@ function socketMessageHandler(sidebarEl, popViewport, ev) {
       previewClickHandler.bind(null, popViewport)
     )
   );
-  selectFirstErrorIfNoneSelected(popViewport);
+  reselectError(popViewport);
 }
 
 // Handle click on an error preview. Triggers viewport population.
@@ -85,13 +107,40 @@ function previewClickHandler(popViewport, ev) {
   selectError(popViewport, ev.currentTarget);
 }
 
+// Make a request for the viewport html of currently selected error and add it
+// to the DOM.
 function populateViewport(viewportEl) {
   // make request for html for current selected error
-  const selectedId = selectedElement ? selectedElement.dataset.index : "";
+  const selectedId = selectedElement ? selectedElement.id : "";
   const url = '/error/' + selectedId;
   const req = new Request(url);
+  const renderViewport = html => {
+    viewportEl.innerHTML = html
+    const upArrow = document.getElementById('nav-up-arrow');
+    if (upArrow !== null) {
+      upArrow.addEventListener(
+        'click',
+        selectNext.bind(null, populateViewport.bind(null, viewportEl))
+      );
+    }
+    const downArrow = document.getElementById('nav-down-arrow');
+    if (downArrow !== null) {
+      downArrow.addEventListener(
+        'click',
+        selectPrev.bind(null, populateViewport.bind(null, viewportEl))
+      );
+    }
+
+//    const locationEl = viewportEl.getElementsByClassName('location')[0];
+//    if (locationEl) {
+//      locationEl.addEventListener(
+//        'click',
+//        (ev => navigator.clipboard.writeText(locationEl.dataset.vimCmd))
+//      );
+
+  }
 
   fetch(req)
     .then(resp => resp.text())
-    .then(html => viewportEl.innerHTML = html);
+    .then(renderViewport);
 }

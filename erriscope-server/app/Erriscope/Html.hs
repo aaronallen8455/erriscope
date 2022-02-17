@@ -20,7 +20,7 @@ import qualified Data.Text.Encoding.Error as TE
 import           Data.Word
 import           Prelude hiding (div, span)
 import           Text.Blaze.Html5
-import           Text.Blaze.Html5.Attributes hiding (span)
+import           Text.Blaze.Html5.Attributes as A hiding (span)
 import           Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import           Text.Read (readMaybe)
 
@@ -56,17 +56,27 @@ emptyErrorCache =
     , selectedError = Nothing
     }
 
--- mockHtmlCache :: HtmlCache
--- mockHtmlCache = renderPayload ET.mockPayload
+getModuleName :: ET.FileError -> BS8.ByteString
+getModuleName fError
+  = fromMaybe (ET.filepath fError) $ ET.moduleName fError
 
 renderViewport :: ET.FileError -> RenderedHtml
 renderViewport fileErr = renderHtml $ do
-  -- TODO show whether it's an error or warning
   let err = ET.errorMsg fileErr
+      modName = getModuleName fileErr
   div ! class_ "error-heading" $ do
+    div ! class_ "nav-arrows" $ do
+      div ! A.id "nav-up-arrow" ! A.title "Previous (Shift+UpArrow)"
+        $ preEscapedToMarkup ("&#8249;" :: T.Text)
+      div ! A.id "nav-down-arrow" ! A.title "Next (Shift+DownArrow)"
+        $ preEscapedToMarkup ("&#8250;" :: T.Text)
+    case ET.errorType err of
+      ET.Error -> span ! class_ "severity severity-error" $ "Error"
+      ET.Warning -> span ! class_ "severity severity-warning" $ "Warning"
     span ! class_ "file-path" $
-      toMarkup . decodeUtf8 $ ET.filepath fileErr
-    span ! class_ "location" $ renderLocation (ET.fileLocation err)
+      toMarkup $ decodeUtf8 modName
+    span ! class_ "location" $
+      "(" <> renderLocation (ET.fileLocation err) <> ")"
   div ! class_ "error-body" $
     toMarkup . decodeUtf8 $ ET.body err
   div ! class_ "error-caret" $
@@ -81,9 +91,8 @@ renderSidebar errorCache = renderHtml $ do
     fileGroup fErrors = do
       let curSelected = selectedError errorCache
           mFError = fst <$> listToMaybe fErrors
-          mModName = (ET.moduleName =<< mFError)
-                 <|> (ET.filepath <$> mFError)
-          errHtml = fmap (errorHtml curSelected)
+          mModName = getModuleName <$> mFError
+          errHtml = fmap (errorPreviewHtml curSelected)
                   . (`zip` [0..])
                   $ fst <$> fErrors
       div ! class_ "file-group" $ do
@@ -92,8 +101,8 @@ renderSidebar errorCache = renderHtml $ do
         div ! class_ "errors-for-file" $
           mconcat errHtml
 
-errorHtml :: Maybe ErrorId -> (ET.FileError, Word) -> Html
-errorHtml mCurSelected (fileError, errIdx) = do
+errorPreviewHtml :: Maybe ErrorId -> (ET.FileError, Word) -> Html
+errorPreviewHtml mCurSelected (fileError, errIdx) = do
   let errMsg = ET.errorMsg fileError
       clss = case ET.errorType errMsg of
                ET.Error -> "error"
@@ -107,11 +116,13 @@ errorHtml mCurSelected (fileError, errIdx) = do
         = case ET.errorType errMsg of
             ET.Error -> ("severity-error", "Error")
             ET.Warning -> ("severity-warning", "Warning")
-   in div ! class_ clss' ! dataAttribute "index" ixAttr $ do
+   in div ! A.id ixAttr ! class_ clss' $ do
         div ! class_ "error-preview-header" $ do
           span ! class_ ("severity " <> sevClass) $ errorTypeTxt
           span ! class_ "location" $ renderLocation (ET.fileLocation errMsg)
-        div ! class_ "error-preview" $ renderErrorPreview (ET.body errMsg)
+        div ! class_ "error-preview-container" $ do
+          div ! class_ "error-preview" $
+            renderErrorPreview (ET.body errMsg)
 
 mkErrorId :: ET.FileError -> Word -> ErrorId
 mkErrorId err idx =
@@ -131,6 +142,16 @@ renderLocation loc =
 renderErrorPreview :: BS8.ByteString -> Html
 renderErrorPreview =
   toMarkup . decodeUtf8 . BS8.unlines . take 4 . BS8.lines
+
+-- | Produces a command that can be copy/pasted in the vim command prompt to
+-- go to jump to the location of an error.
+-- mkVimCommand :: ET.FileError -> AttributeValue
+-- mkVimCommand err =
+--   "e " <> toValue (decodeUtf8 $ ET.filepath err)
+--   <> " | cal cursor(" <> lineNum <> "," <> colNum <> ")"
+--   where
+--     lineNum = toValue . ET.lineNum . ET.fileLocation $ ET.errorMsg err
+--     colNum = toValue . ET.colNum . ET.fileLocation $ ET.errorMsg err
 
 decodeUtf8 :: BS8.ByteString -> T.Text
 decodeUtf8 = TE.decodeUtf8With TE.ignore
