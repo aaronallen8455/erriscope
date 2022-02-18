@@ -1,5 +1,5 @@
 // TODO have this line inserted by the server.
-const socketPort = '9160';
+const socketPort = '8083';
 
 // element of the currently selected error message
 let selectedElement = null;
@@ -7,7 +7,7 @@ let selectedElement = null;
 window.onload = main;
 
 function main() {
-  const socket = new WebSocket('ws://localhost:' + socketPort);
+  const socket = new WebSocket('ws://127.0.0.1:' + socketPort);
   const sidebarEl = document.getElementById('sidebar');
   const viewportEl = document.getElementById('viewport');
   const popViewport = populateViewport.bind(null, viewportEl);

@@ -42,6 +42,7 @@ executable erriscope-server
     default-extensions: OverloadedStrings
     build-depends:    base >=4.14.0.0 && <4.17.0.0,
                       wai,
+                      wai-websockets,
                       warp,
                       websockets,
                       http-types,

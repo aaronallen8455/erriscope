@@ -41,7 +41,7 @@ plugin = Ghc.defaultPlugin
 driverPlugin :: [Ghc.CommandLineOption] -> Ghc.DynFlags -> IO Ghc.DynFlags
 driverPlugin _opts dynFlags = do
   -- TODO get port from opts
-  initializeWebsocket 9160
+  initializeWebsocket 8083
 
   deleteAll
 

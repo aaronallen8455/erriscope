@@ -1,17 +1,17 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Main where
 
-import           Control.Concurrent (forkIO)
 import           Control.Concurrent.MVar
-import           Control.Monad
 import           Data.FileEmbed (embedStringFile)
 import qualified Data.Map.Strict as M
-import           Network.Wai
 import           Network.HTTP.Types
-import           Network.Wai.Handler.Warp (run)
+import           Network.Wai
+import qualified Network.Wai.Handler.Warp as Wai
+import qualified Network.Wai.Handler.WebSockets as Wai
+import qualified Network.WebSockets as WS
 
 import           Erriscope.Html (ErrorCache(..), emptyErrorCache, parseErrorId)
-import           Erriscope.Sockets (runWebsocket)
+import           Erriscope.Sockets (socketServer)
 import           Paths_erriscope_server (getDataFileName)
 
 -- Start a web socket server in conjunction with the file server
@@ -74,8 +74,11 @@ import           Paths_erriscope_server (getDataFileName)
 main :: IO ()
 main = do
   htmlCache <- newMVar emptyErrorCache
-  void . forkIO $ runWebsocket htmlCache
-  run 8082 (app htmlCache)
+  Wai.run 8083 $
+    Wai.websocketsOr
+      WS.defaultConnectionOptions
+      (socketServer htmlCache)
+      (app htmlCache)
 
 app :: MVar ErrorCache -> Application
 app errorsMVar request respond = do

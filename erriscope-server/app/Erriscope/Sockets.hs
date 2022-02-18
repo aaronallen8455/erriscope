@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeApplications #-}
 module Erriscope.Sockets
-  ( runWebsocket
+  ( socketServer
   ) where
 
 import           Control.Concurrent.MVar
@@ -19,10 +19,10 @@ type ClientId = Int
 type Client = WS.Connection
 type Clients = IM.IntMap Client
 
-runWebsocket :: MVar ErrorCache -> IO ()
-runWebsocket errorsMVar = do
+socketServer :: MVar ErrorCache -> WS.ServerApp
+socketServer errorsMVar pending = do
   clients <- newMVar mempty
-  WS.runServer "127.0.0.1" 9160 $ serverApp errorsMVar clients
+  serverApp errorsMVar clients pending
 
 serverApp :: MVar ErrorCache -> MVar Clients -> WS.ServerApp
 serverApp errorsMVar clientsMVar pending = do
