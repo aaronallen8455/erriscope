@@ -7,16 +7,26 @@ let selectedElement = null;
 window.onload = main;
 
 function main() {
-  const socket = new WebSocket('ws://localhost:' + socketPort);
   const sidebarEl = document.getElementById('sidebar');
   const viewportEl = document.getElementById('viewport');
   const popViewport = populateViewport.bind(null, viewportEl);
+  initSocket(sidebarEl, popViewport);
+  window.addEventListener('keydown', keydownHandler.bind(null, popViewport));
+}
+
+function initSocket(sidebarEl, popViewport) {
+  const socket = new WebSocket('ws://localhost:' + socketPort);
   socket.addEventListener('open', socketOpenHandler);
   socket.addEventListener(
     'message',
     socketMessageHandler.bind(null, sidebarEl, popViewport)
   );
-  window.addEventListener('keydown', keydownHandler.bind(null, popViewport));
+  socket.addEventListener('closed', handleSocketClose);
+  socket.addEventListener('error', handleSocketClose);
+}
+
+function handleSocketClose(ev) {
+  console.log('socket closed! ' + ev);
 }
 
 function keydownHandler(popViewport, ev) {
@@ -97,20 +107,18 @@ function reselectError(popViewport) {
 function socketMessageHandler(sidebarEl, popViewport, ev) {
   const sidebarHtml = ev.data;
   sidebarEl.innerHTML = sidebarHtml;
-  setTimeout(function() {
-    // attach handlers
-    const previewEls = document.getElementsByClassName('error');
-    Array.from(previewEls, el =>
-      el.addEventListener(
-        'click',
-        previewClickHandler.bind(null, popViewport)
-      )
-    );
-    reselectError(popViewport);
-    if (selectedElement === null) {
-      clearViewport();
-    }
-  }, 0);
+  // attach handlers
+  const previewEls = document.getElementsByClassName('error');
+  Array.from(previewEls, el =>
+    el.addEventListener(
+      'click',
+      previewClickHandler.bind(null, popViewport)
+    )
+  );
+  reselectError(popViewport);
+  if (selectedElement === null) {
+    clearViewport();
+  }
 }
 
 // Handle click on an error preview. Triggers viewport population.
@@ -127,7 +135,6 @@ function populateViewport(viewportEl) {
   const req = new Request(url);
   const renderViewport = html => {
     viewportEl.innerHTML = html
-    setTimeout(function() {
     const upArrow = document.getElementById('nav-up-arrow');
     if (upArrow !== null) {
       upArrow.addEventListener(
@@ -142,7 +149,6 @@ function populateViewport(viewportEl) {
         selectPrev.bind(null, populateViewport.bind(null, viewportEl))
       );
     }
-    }, 0);
 
 //    const locationEl = viewportEl.getElementsByClassName('location')[0];
 //    if (locationEl) {

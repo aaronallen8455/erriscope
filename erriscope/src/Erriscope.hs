@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 module Erriscope
@@ -5,6 +6,7 @@ module Erriscope
   ) where
 
 import           Control.Concurrent.MVar
+import           Control.Exception (throwIO, try)
 import           Control.Monad
 import           Control.Monad.IO.Class
 import qualified Data.ByteString.Builder as BSB
@@ -12,11 +14,13 @@ import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Foldable
 import qualified Data.Map.Strict as M
+import           Data.Maybe
 import qualified Data.Set as S
 import qualified Network.Socket as Sock
 import qualified Network.WebSockets as WS
 import qualified Network.WebSockets.Stream as Stream
 import qualified System.Directory as Dir
+import           System.IO.Error (isResourceVanishedError)
 import           System.IO.Unsafe
 
 import qualified Erriscope.Internal.GhcFacade as Ghc
@@ -113,24 +117,29 @@ initializeWebsocket port =
           host = "127.0.0.1"
           fullHost = if port == 80 then host else host ++ ":" ++ show port
       addr:_ <- Sock.getAddrInfo (Just hints) (Just host) (Just $ show port)
-      sock   <- Sock.socket (Sock.addrFamily addr) Sock.Stream Sock.defaultProtocol
+      sock <- Sock.socket (Sock.addrFamily addr) Sock.Stream Sock.defaultProtocol
       Sock.setSocketOption sock Sock.NoDelay 1
-      Sock.connect sock (Sock.addrAddress addr)
+      e <- try @IOError $ Sock.connect sock (Sock.addrAddress addr)
       -- TODO does the stream need to be closed when application shuts down?
       -- Could use `mkWeakMVar` if so
-      stream <- Stream.makeSocketStream sock
+      case e of
+        Left _err -> do
+          putStrLn "Unable to connect to erriscope server! Make sure you have 'erriscope-server' running."
+          pure Nothing
+        Right _ -> do
+          stream <- Stream.makeSocketStream sock
 
-      -- TODO what if the server is unreachable?
-      conn <-
-        WS.newClientConnection
-          stream
-          fullHost
-          "/"
-          WS.defaultConnectionOptions
-          []
+          -- TODO what if the server is unreachable?
+          conn <-
+            WS.newClientConnection
+              stream
+              fullHost
+              "/"
+              WS.defaultConnectionOptions
+              []
 
-      WS.sendTextData conn (BS8.pack "plugin")
-      pure $ Just conn
+          WS.sendTextData conn (BS8.pack "plugin")
+          pure $ Just conn
 
 -- | If a module passes the parsing phase then we get its proper name
 parsedResult :: MonadIO m
@@ -195,9 +204,7 @@ reportError dynFlags severity srcSpan msgDoc
                   newKnownFiles = M.adjust addEmittedError modFile knownFiles
               pure (newKnownFiles, Just errorMessage)
 
-    for_ mMsg $ \errorMessage ->
-      withMVar connMVar . traverse_ $ \conn ->
-        WS.sendBinaryData conn (ET.encodeEnvelope errorMessage)
+    traverse_ sendMessage mMsg
 
   | otherwise = pure ()
   where
@@ -209,12 +216,11 @@ reportError dynFlags severity srcSpan msgDoc
 -- | Remove all errors on the server for a specific file
 deleteErrorsForFile :: ET.FilePath -> IO ()
 deleteErrorsForFile modFile = do
-  withMVar connMVar . traverse_ $ \conn -> do
-    let deleteMsg = ET.MkEnvelope
-          { ET.version = 0
-          , ET.message = ET.DeleteFile modFile
-          }
-    WS.sendBinaryData conn (ET.encodeEnvelope deleteMsg)
+  let deleteMsg = ET.MkEnvelope
+        { ET.version = 0
+        , ET.message = ET.DeleteFile modFile
+        }
+  sendMessage deleteMsg
 
 -- | Send a message to delete all existing errors on the server.
 deleteAll :: IO ()
@@ -223,7 +229,25 @@ deleteAll = do
         { ET.version = 0
         , ET.message = ET.DeleteAll
         }
+  sendMessage msg
 
-  withMVar connMVar $ \mConn -> for_ mConn $ \conn ->
+sendMessage :: ET.Envelope -> IO ()
+sendMessage msg = do
+  isConnected <- withMVar connMVar $ pure . isJust
+  unless isConnected (initializeWebsocket 8083)
+
+  eErr <- try . withMVar connMVar . traverse_ $ \conn ->
     WS.sendBinaryData conn (ET.encodeEnvelope msg)
 
+  case eErr of
+    Right _ -> pure ()
+    Left err ->
+      if isResourceVanishedError err
+         then do
+           _ <- swapMVar connMVar Nothing
+           initializeWebsocket 8083
+           connected <- withMVar connMVar $ pure . isJust
+           if connected
+              then sendMessage msg
+              else putStrLn "Unable to connect to erriscope server!"
+         else throwIO err

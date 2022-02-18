@@ -36,7 +36,7 @@ socketServer errorsMVar clientsMVar pending = do
       clientId <- addClient conn clientsMVar
       -- send current sidebar html to new client
       sendSidebarHtmlToClient errorsMVar conn
-      let disconnect = removeClient clientId clientsMVar
+      let disconnect = removeClient conn clientId clientsMVar
       WS.withPingThread conn 30 (pure ()) . (`finally` disconnect) $
         forever . void $ WS.receiveData @BS.ByteString conn
 
@@ -80,6 +80,7 @@ addClient conn clientsMVar =
     let clientId = maybe 0 fst $ IM.lookupMax clients
      in pure (IM.insert clientId conn clients, clientId)
 
-removeClient :: ClientId -> MVar Clients -> IO ()
-removeClient clientId clientsMVar =
+removeClient :: WS.Connection -> ClientId -> MVar Clients -> IO ()
+removeClient conn clientId clientsMVar = do
+  WS.sendClose conn ("Websocket disconnecting" :: BS.ByteString)
   modifyMVar_ clientsMVar $ pure . IM.delete clientId

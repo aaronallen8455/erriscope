@@ -40,6 +40,7 @@ html {
   font-weight: bold;
   margin: 3px;
   text-align: right;
+  word-wrap: break-word;
 }
 
 .errors-for-file {
