@@ -1,6 +1,6 @@
 module M where
 
-foo :: Int
+foo :: ()
 foo = 1 --"test"
 foo :: ()
 foo = 2 --"test"

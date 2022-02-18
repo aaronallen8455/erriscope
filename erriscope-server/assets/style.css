@@ -20,6 +20,7 @@ html {
   background-color: #40303f;
   color: white;
   padding-bottom: 8px;
+  overflow-y: auto;
 }
 
 #sidebar:hover {

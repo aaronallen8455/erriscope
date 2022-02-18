@@ -74,10 +74,11 @@ import           Paths_erriscope_server (getDataFileName)
 main :: IO ()
 main = do
   htmlCache <- newMVar emptyErrorCache
+  clients <- newMVar mempty
   Wai.run 8083 $
     Wai.websocketsOr
       WS.defaultConnectionOptions
-      (socketServer htmlCache)
+      (socketServer htmlCache clients)
       (app htmlCache)
 
 app :: MVar ErrorCache -> Application

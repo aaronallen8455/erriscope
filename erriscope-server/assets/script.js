@@ -7,7 +7,7 @@ let selectedElement = null;
 window.onload = main;
 
 function main() {
-  const socket = new WebSocket('ws://127.0.0.1:' + socketPort);
+  const socket = new WebSocket('ws://localhost:' + socketPort);
   const sidebarEl = document.getElementById('sidebar');
   const viewportEl = document.getElementById('viewport');
   const popViewport = populateViewport.bind(null, viewportEl);

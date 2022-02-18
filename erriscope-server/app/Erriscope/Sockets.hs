@@ -19,13 +19,8 @@ type ClientId = Int
 type Client = WS.Connection
 type Clients = IM.IntMap Client
 
-socketServer :: MVar ErrorCache -> WS.ServerApp
-socketServer errorsMVar pending = do
-  clients <- newMVar mempty
-  serverApp errorsMVar clients pending
-
-serverApp :: MVar ErrorCache -> MVar Clients -> WS.ServerApp
-serverApp errorsMVar clientsMVar pending = do
+socketServer :: MVar ErrorCache -> MVar Clients -> WS.ServerApp
+socketServer errorsMVar clientsMVar pending = do
   conn <- WS.acceptRequest pending
   connType <- WS.receiveData conn :: IO BS.ByteString
   case connType of
@@ -76,8 +71,8 @@ handleMessage errorsMVar clientsMVar message = do
 -- | Renders the sidebar content and sends it to all clients
 sendSidebarHtmlToClient :: MVar ErrorCache -> WS.Connection -> IO ()
 sendSidebarHtmlToClient errorsMVar conn =
-  withMVar errorsMVar $ \errors ->
-    WS.sendTextData conn $ renderSidebar errors
+  withMVar errorsMVar $
+    WS.sendTextData conn . renderSidebar
 
 addClient :: WS.Connection -> MVar Clients -> IO ClientId
 addClient conn clientsMVar =
