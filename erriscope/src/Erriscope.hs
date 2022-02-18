@@ -163,12 +163,12 @@ reportError dynFlags severity srcSpan msgDoc
         Nothing -> pure (knownFiles, Nothing)
         Just knownFile -> do
           let errBody = BSL.toStrict . BSB.toLazyByteString . BSB.stringUtf8
-                      $ Ghc.showSDocForUser dynFlags Ghc.alwaysQualify msgDoc
+                      $ Ghc.showSDocForUser dynFlags Ghc.neverQualify msgDoc
           if errBody `S.member` emittedErrors knownFile
              then pure (knownFiles, Nothing)
              else do
               let mModName = modName knownFile
-              caret <- Ghc.showSDocForUser dynFlags Ghc.alwaysQualify
+              caret <- Ghc.showSDocForUser dynFlags Ghc.neverQualify
                    <$> Ghc.getCaretDiagnostic severity srcSpan
               let loc = ET.MkLocation
                     { ET.lineNum = fromIntegral $ Ghc.srcSpanStartLine rss

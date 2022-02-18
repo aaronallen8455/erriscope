@@ -43,8 +43,12 @@ function socketOpenHandler(ev) {
 // Select the first error if there is no currently selected error
 function selectFirstError(popViewport) {
   const errors = document.getElementsByClassName('error');
+  let firstError = null;
   if (firstError = errors[0]) {
     selectError(popViewport, firstError);
+  } else {
+    // no errors
+    selectedElement = null;
   }
 }
 
@@ -81,6 +85,8 @@ function reselectError(popViewport) {
     let newError = null;
     if (newError = document.getElementById(errorId)) {
       selectError(popViewport, newError);
+    } else {
+      selectFirstError(popViewport);
     }
   } else {
     selectFirstError(popViewport);
@@ -101,6 +107,9 @@ function socketMessageHandler(sidebarEl, popViewport, ev) {
       )
     );
     reselectError(popViewport);
+    if (selectedElement === null) {
+      clearViewport();
+    }
   }, 0);
 }
 
@@ -147,4 +156,10 @@ function populateViewport(viewportEl) {
   fetch(req)
     .then(resp => resp.text())
     .then(renderViewport);
+}
+
+// Clears the viewport if there are no errors
+function clearViewport() {
+  const viewportEl = document.getElementById('viewport');
+  viewportEl.innerHTML = "";
 }
