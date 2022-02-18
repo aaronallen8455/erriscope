@@ -12,6 +12,7 @@ module Erriscope.Types
   , Location(..)
   , FilePath
   , ModuleName
+  , isWarning
   , encodeEnvelope
   , decodeEnvelope
   ) where
@@ -73,6 +74,9 @@ data FileError =
     , errorMsg :: ErrorMsg
     }
 
+isWarning :: FileError -> Bool
+isWarning = (== Warning) . errorType . errorMsg
+
 instance Serialize FileError where
   put MkFileError{..} = put (moduleName, filepath, errorMsg)
   get = do
@@ -97,7 +101,7 @@ instance Serialize ErrorMsg where
 data ErrorType
   = Error
   | Warning
-  deriving (Enum, Bounded)
+  deriving (Enum, Bounded, Eq)
 
 instance Serialize ErrorType where
   put = put @Word8 . fromIntegral . fromEnum

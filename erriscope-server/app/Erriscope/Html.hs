@@ -43,18 +43,12 @@ parseErrorId txt
   = Just (ix, TE.encodeUtf8 $ T.replace "%" "/" pathTxt)
   | otherwise = Nothing
 
-data ErrorCache =
+newtype ErrorCache =
   MkErrorCache
-    { fileErrors :: M.Map ET.FilePath [(ET.FileError, RenderedHtml)]
-    , selectedError :: Maybe ErrorId
-    }
+    { fileErrors :: M.Map ET.FilePath [(ET.FileError, RenderedHtml)] }
 
 emptyErrorCache :: ErrorCache
-emptyErrorCache =
-  MkErrorCache
-    { fileErrors = mempty
-    , selectedError = Nothing
-    }
+emptyErrorCache = MkErrorCache { fileErrors = mempty }
 
 getModuleName :: ET.FileError -> BS8.ByteString
 getModuleName fError
@@ -64,6 +58,7 @@ renderViewport :: ET.FileError -> RenderedHtml
 renderViewport fileErr = renderHtml $ do
   let err = ET.errorMsg fileErr
       modName = getModuleName fileErr
+      filePath = toValue . decodeUtf8 $ ET.filepath fileErr
   div ! class_ "error-heading" $ do
     div ! class_ "nav-arrows" $ do
       div ! A.id "nav-up-arrow" ! A.title "Previous (Shift+UpArrow)"
@@ -73,7 +68,7 @@ renderViewport fileErr = renderHtml $ do
     case ET.errorType err of
       ET.Error -> span ! class_ "severity severity-error" $ "Error"
       ET.Warning -> span ! class_ "severity severity-warning" $ "Warning"
-    span ! class_ "file-path" $
+    span ! class_ "mod-name" ! A.title filePath $
       toMarkup $ decodeUtf8 modName
     span ! class_ "location" $
       "(" <> renderLocation (ET.fileLocation err) <> ")"
@@ -84,39 +79,49 @@ renderViewport fileErr = renderHtml $ do
 
 renderSidebar :: ErrorCache -> RenderedHtml
 renderSidebar errorCache = renderHtml $ do
+  div ! class_ "counts-wrapper" $
+    div ! class_ "counts" $ do
+      let (warns, errs) = List.partition ET.isWarning . foldMap (fmap fst)
+                        $ fileErrors errorCache
+          numErrors = length errs
+          numWarns = length warns
+          pluralize n | n == 1 = ""
+                      | otherwise = "s"
+      span ! class_ "error-count" $
+        toMarkup numErrors <> " Error" <> pluralize numErrors
+      span ", "
+      span ! class_ "warn-count" $
+        toMarkup numWarns <> " Warning" <> pluralize numWarns
   div ! class_ "errors-list"
       $ traverse_ fileGroup
       $ fileErrors errorCache
   where
     fileGroup fErrors = do
-      let curSelected = selectedError errorCache
-          mFError = fst <$> listToMaybe fErrors
+      let mFError = fst <$> listToMaybe fErrors
           mModName = getModuleName <$> mFError
-          errHtml = fmap (errorPreviewHtml curSelected)
+          filePath = toValue $ foldMap (decodeUtf8 . ET.filepath) mFError
+          errHtml = fmap errorPreviewHtml
                   . (`zip` [0..])
                   $ fst <$> fErrors
       div ! class_ "file-group" $ do
-        span ! class_ "file-name" $
+        span ! class_ "file-name" ! A.title filePath $
           toMarkup (decodeUtf8 $ fold mModName)
         div ! class_ "errors-for-file" $
           mconcat errHtml
 
-errorPreviewHtml :: Maybe ErrorId -> (ET.FileError, Word) -> Html
-errorPreviewHtml mCurSelected (fileError, errIdx) = do
+errorPreviewHtml :: (ET.FileError, Word) -> Html
+errorPreviewHtml (fileError, errIdx) = do
   let errMsg = ET.errorMsg fileError
       clss = case ET.errorType errMsg of
                ET.Error -> "error"
                ET.Warning -> "error warning"
-      clss' = if mCurSelected == Just errorId
-                 then clss <> " selected"
-                 else clss
       errorId = mkErrorId fileError errIdx
       ixAttr = renderErrorId errorId
       (sevClass, errorTypeTxt)
         = case ET.errorType errMsg of
             ET.Error -> ("severity-error", "Error")
             ET.Warning -> ("severity-warning", "Warning")
-   in div ! A.id ixAttr ! class_ clss' $ do
+   in div ! A.id ixAttr ! class_ clss $ do
         div ! class_ "error-preview-header" $ do
           span ! class_ ("severity " <> sevClass) $ errorTypeTxt
           span ! class_ "location" $ renderLocation (ET.fileLocation errMsg)

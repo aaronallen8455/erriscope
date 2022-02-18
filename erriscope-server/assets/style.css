@@ -108,7 +108,7 @@ html {
 }
 
 .error-preview-container .error-preview {
-  mask-image: linear-gradient(to bottom, black 32px, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 17px, transparent 100%);
   color: white;
   font-family: monospace;
   white-space: pre;
@@ -185,3 +185,17 @@ html {
   box-sizing: border-box;
   overflow-x: auto;
   font-size: 1.2em;
+}
+
+.counts-wrapper {
+  text-align: right;
+}
+
+.counts {
+  background-color: #575268;
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 6px;
+  margin-right: 25px;
+  font-size: .8em;
+}
