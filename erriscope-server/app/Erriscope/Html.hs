@@ -38,7 +38,7 @@ type ErrorId = (Word, ET.FilePath)
 
 parseErrorId :: T.Text -> Maybe ErrorId
 parseErrorId txt
-  | [ixTxt, pathTxt] <- T.split (== '-') txt
+  | (ixTxt, pathTxt) <- T.dropWhile (== '-') <$> T.break (== '-') txt
   , Just ix <- readMaybe $ T.unpack ixTxt
   = Just (ix, TE.encodeUtf8 $ T.replace "%" "/" pathTxt)
   | otherwise = Nothing

@@ -136,7 +136,8 @@ app errorsMVar request respond = do
                 status404
                 [("Content-Type", "text/plain")]
                 "Error index doesn't exist"
-      | otherwise ->
+      | otherwise -> do
+          print errorId
           respond $
             responseLBS
               status200

@@ -24,7 +24,8 @@ maintainer:         aaron@flipstone.com
 extra-source-files: CHANGELOG.md,
                     assets/index.html,
                     assets/script.js,
-                    assets/style.css
+                    assets/style.css,
+                    assets/favicon.ico
 
 data-files: assets/favicon.ico
 

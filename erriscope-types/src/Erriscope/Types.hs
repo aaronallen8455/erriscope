@@ -8,6 +8,7 @@ module Erriscope.Types
   , FileError(..)
   , ErrorMsg(..)
   , ErrorType(..)
+  , ErrorBody
   , Location(..)
   , FilePath
   , ModuleName
