@@ -44,25 +44,29 @@ socketServer errorsMVar clientsMVar pending = do
 
 handleMessage :: MVar ErrorCache -> MVar Clients -> ET.Message -> IO ()
 handleMessage errorsMVar clientsMVar message = do
-  modifyMVar_ errorsMVar $ \errors ->
+  shouldEmit <- modifyMVar errorsMVar $ \errors ->
     case message of
       ET.AddError fileError -> do
         let html = renderViewport fileError
             entry = (fileError, html)
-        pure errors
-          { fileErrors =
-              M.alter (Just . maybe [entry] (++ [entry]))
-                      (ET.filepath fileError)
-                      (fileErrors errors)
-          }
+        pure ( errors
+                 { fileErrors =
+                     M.alter (Just . maybe [entry] (++ [entry]))
+                             (ET.filepath fileError)
+                             (fileErrors errors)
+                 }
+             , True
+             )
       ET.DeleteFile filePath ->
-        pure errors
-          { fileErrors = M.delete filePath $ fileErrors errors }
+        pure ( errors
+                 { fileErrors = M.delete filePath $ fileErrors errors }
+             , M.member filePath $ fileErrors errors
+             )
       ET.DeleteAll ->
-        pure emptyErrorCache
+        pure (emptyErrorCache, True)
 
   -- transmit to all clients
-  withMVar clientsMVar . traverse_
+  when shouldEmit . withMVar clientsMVar . traverse_
     $ sendSidebarHtmlToClient errorsMVar
 
 -- | Renders the sidebar content and sends it to all clients

@@ -108,7 +108,7 @@ html {
 }
 
 .error-preview-container .error-preview {
-  mask-image: linear-gradient(to bottom, black 17px, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 17px, transparent 80px);
   color: white;
   font-family: monospace;
   white-space: pre;

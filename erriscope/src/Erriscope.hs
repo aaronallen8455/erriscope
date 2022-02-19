@@ -156,6 +156,11 @@ parsedResult modSum parsedMod
     liftIO . modifyMVar_ knownFilesMVar $
       pure . M.insert srcFilePath
         MkKnownFile { modName = mModName, emittedErrors = mempty }
+    -- It's necessary to clear errors here because the CPP phase doesn't run
+    -- for modules that are re-compiled due to a change in another module.
+    -- Note that parse errors cannot result from such a change, so they will
+    -- not get duplicated on the server.
+    liftIO $ deleteErrorsForFile srcFilePath
     pure parsedMod
   | otherwise = pure parsedMod
 
@@ -164,7 +169,6 @@ reportError :: Ghc.DynFlags -> Ghc.Severity -> Ghc.SrcSpan -> Ghc.SDoc -> IO ()
 reportError dynFlags severity srcSpan msgDoc
   | Ghc.RealSrcSpan' rss <- srcSpan
   , Just errType <- getErrorType severity
-  -- , modFile /= BS8.pack "<interactive>" -- ignore errors from within ghci session
   = do
     let modFile = Ghc.bytesFS $ Ghc.srcSpanFile rss
     mMsg <- modifyMVar knownFilesMVar $ \knownFiles -> do
