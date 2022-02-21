@@ -12,16 +12,23 @@ module Erriscope.Types
   , Location(..)
   , FilePath
   , ModuleName
+  , Port
+  , defaultPort
+  , validPort
+  , getPortFromArgs
   , isWarning
   , encodeEnvelope
   , decodeEnvelope
   ) where
 
+import           Control.Monad
 import qualified Data.ByteString as BS
+import           Data.Maybe
 import           Data.Serialize
 import           Data.Word
 import           Prelude hiding (FilePath)
 import           Safe
+import           Text.Read (readMaybe)
 
 type ModuleName = BS.ByteString
 type FilePath = BS.ByteString
@@ -43,7 +50,6 @@ instance Serialize Envelope where
 data Message
   = AddError FileError -- Add an error
   | DeleteFile FilePath -- Remove all existing errors for a file
-  | DeleteAll
 
 instance Serialize Message where
   put (AddError fileError) = do
@@ -52,13 +58,10 @@ instance Serialize Message where
   put (DeleteFile file) = do
     put (1 :: Word8)
     put file
-  put DeleteAll = do
-    put (2 :: Word8)
   get = do
     get @Word8 >>= \case
       0 -> AddError <$> get
       1 -> DeleteFile <$> get
-      2 -> pure DeleteAll
       _ -> fail "Unable to decode Message"
 
 encodeEnvelope :: Envelope -> BS.ByteString
@@ -121,3 +124,18 @@ instance Serialize Location where
   get = do
     (lineNum, colNum) <- get
     pure MkLocation{..}
+
+type Port = Int
+
+defaultPort :: Port
+defaultPort = 8888
+
+validPort :: Port -> Bool
+validPort port = port >= 1 && port <= 65535
+
+getPortFromArgs :: [String] -> Port
+getPortFromArgs args = fromMaybe defaultPort $ do
+  firstArg : _ <- pure args
+  port <- readMaybe firstArg
+  guard $ validPort port
+  pure port

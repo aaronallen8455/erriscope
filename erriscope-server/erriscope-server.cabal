@@ -27,8 +27,6 @@ extra-source-files: CHANGELOG.md,
                     assets/style.css,
                     assets/favicon.ico
 
-data-files: assets/favicon.ico
-
 executable erriscope-server
     ghc-options: -Wall
     main-is:          Main.hs
@@ -36,9 +34,6 @@ executable erriscope-server
     -- Modules included in this executable, other than Main.
     other-modules: Erriscope.Html
                    Erriscope.Sockets
-                   Paths_erriscope_server
-
-    autogen-modules: Paths_erriscope_server
 
     default-extensions: OverloadedStrings
     build-depends:    base >=4.14.0.0 && <4.17.0.0,

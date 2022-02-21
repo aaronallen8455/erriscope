@@ -1,6 +1,3 @@
-// TODO have this line inserted by the server.
-const socketPort = '8083';
-
 // element of the currently selected error message
 let selectedElement = null;
 

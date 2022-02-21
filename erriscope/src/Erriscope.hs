@@ -1,4 +1,3 @@
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 module Erriscope
@@ -6,8 +5,9 @@ module Erriscope
   ) where
 
 import           Control.Concurrent.MVar
-import           Control.Exception (throwIO, try)
+import           Control.Exception.Safe (throwIO, try, tryAny)
 import           Control.Monad
+import           Control.Monad.Trans.Except
 import           Control.Monad.IO.Class
 import qualified Data.ByteString.Builder as BSB
 import qualified Data.ByteString.Char8 as BS8
@@ -55,11 +55,9 @@ plugin = Ghc.defaultPlugin
 
 -- | Overrides the log action and the phase hook.
 driverPlugin :: [Ghc.CommandLineOption] -> Ghc.DynFlags -> IO Ghc.DynFlags
-driverPlugin _opts dynFlags = do
-  -- TODO get port from opts
-  initializeWebsocket 8083
-
-  deleteAll
+driverPlugin opts dynFlags = do
+  let port = ET.getPortFromArgs opts
+  initializeWebsocket port
 
   pure dynFlags
 #if MIN_VERSION_ghc(9,0,0)
@@ -106,40 +104,43 @@ pruneDeletedFiles = do
   void $ M.traverseWithKey go knownFiles
 
 -- | Opens the websocket connection
-initializeWebsocket :: Int -> IO ()
+initializeWebsocket :: ET.Port -> IO ()
 initializeWebsocket port =
   modifyMVar_ connMVar $ \case
     Just conn -> pure (Just conn)
     Nothing -> do
-      -- Create and connect socket
-      let hints = Sock.defaultHints {Sock.addrSocketType = Sock.Stream}
-          -- Correct host and path.
-          host = "127.0.0.1"
-          fullHost = if port == 80 then host else host ++ ":" ++ show port
-      addr:_ <- Sock.getAddrInfo (Just hints) (Just host) (Just $ show port)
-      sock <- Sock.socket (Sock.addrFamily addr) Sock.Stream Sock.defaultProtocol
-      Sock.setSocketOption sock Sock.NoDelay 1
-      e <- try @IOError $ Sock.connect sock (Sock.addrAddress addr)
-      -- TODO does the stream need to be closed when application shuts down?
-      -- Could use `mkWeakMVar` if so
-      case e of
+      eConn <- runExceptT $ do
+        -- Create and connect socket
+        let hints = Sock.defaultHints {Sock.addrSocketType = Sock.Stream}
+            -- Correct host and path.
+            host = "127.0.0.1"
+            fullHost = if port == 80 then host else host ++ ":" ++ show port
+        addr:_ <- ExceptT . tryAny $
+          Sock.getAddrInfo (Just hints) (Just host) (Just $ show port)
+        sock <- ExceptT . tryAny $
+          Sock.socket (Sock.addrFamily addr) Sock.Stream Sock.defaultProtocol
+        ExceptT . tryAny $ Sock.setSocketOption sock Sock.NoDelay 1
+        ExceptT . tryAny $
+          Sock.connect sock (Sock.addrAddress addr)
+        -- TODO does the stream need to be closed when application shuts down?
+        -- Could use `mkWeakMVar` if so
+        stream <- ExceptT . tryAny $ Stream.makeSocketStream sock
+
+        conn <- ExceptT . tryAny $
+          WS.newClientConnection
+            stream
+            fullHost
+            "/"
+            WS.defaultConnectionOptions
+            []
+
+        ExceptT . tryAny $ WS.sendTextData conn (BS8.pack "plugin")
+        pure conn
+      case eConn of
         Left _err -> do
-          putStrLn "Unable to connect to erriscope server! Make sure you have 'erriscope-server' running."
-          pure Nothing
-        Right _ -> do
-          stream <- Stream.makeSocketStream sock
-
-          -- TODO what if the server is unreachable?
-          conn <-
-            WS.newClientConnection
-              stream
-              fullHost
-              "/"
-              WS.defaultConnectionOptions
-              []
-
-          WS.sendTextData conn (BS8.pack "plugin")
-          pure $ Just conn
+            putStrLn "Unable to connect to erriscope server! Ensure you have 'erriscope-server' running."
+            pure Nothing
+        Right conn -> pure $ Just conn
 
 -- | If a module passes the parsing phase then we get its proper name
 parsedResult :: MonadIO m
@@ -225,15 +226,6 @@ deleteErrorsForFile modFile = do
         , ET.message = ET.DeleteFile modFile
         }
   sendMessage deleteMsg
-
--- | Send a message to delete all existing errors on the server.
-deleteAll :: IO ()
-deleteAll = do
-  let msg = ET.MkEnvelope
-        { ET.version = 0
-        , ET.message = ET.DeleteAll
-        }
-  sendMessage msg
 
 sendMessage :: ET.Envelope -> IO ()
 sendMessage msg = do

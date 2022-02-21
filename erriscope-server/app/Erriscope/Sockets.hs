@@ -62,8 +62,6 @@ handleMessage errorsMVar clientsMVar message = do
                  { fileErrors = M.delete filePath $ fileErrors errors }
              , M.member filePath $ fileErrors errors
              )
-      ET.DeleteAll ->
-        pure (emptyErrorCache, True)
 
   -- transmit to all clients
   when shouldEmit . withMVar clientsMVar . traverse_
