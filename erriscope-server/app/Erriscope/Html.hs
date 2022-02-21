@@ -16,7 +16,6 @@ import qualified Data.Map.Strict as M
 import           Data.Maybe
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
-import qualified Data.Text.Encoding.Error as TE
 import           Data.Word
 import           Prelude hiding (div, span)
 import           Text.Blaze.Html5
@@ -24,6 +23,7 @@ import           Text.Blaze.Html5.Attributes as A hiding (span)
 import           Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import           Text.Read (readMaybe)
 
+import           Erriscope.Html.SyntaxHighlighting (highlightSyntax, decodeUtf8)
 import qualified Erriscope.Types as ET
 
 type RenderedHtml = LBS.ByteString
@@ -73,9 +73,20 @@ renderViewport fileErr = renderHtml $ do
     span ! class_ "location" $
       "(" <> renderLocation (ET.fileLocation err) <> ")"
   div ! class_ "error-body" $
-    toMarkup . decodeUtf8 $ ET.body err
+    renderErrorBody err
   div ! class_ "error-caret" $
     toMarkup . decodeUtf8 $ ET.caret err
+
+-- TODO be selective about what parts of the message get syntax highlighting.
+-- "In ...:"
+--
+-- "variable not in scope:"
+--
+-- anything between '‘' '’'
+--
+-- "the infered types of"
+renderErrorBody :: ET.ErrorMsg -> Html
+renderErrorBody = highlightSyntax . ET.body -- '‘' '’'
 
 renderSidebar :: ErrorCache -> RenderedHtml
 renderSidebar errorCache = renderHtml $ do
@@ -157,6 +168,3 @@ renderErrorPreview =
 --   where
 --     lineNum = toValue . ET.lineNum . ET.fileLocation $ ET.errorMsg err
 --     colNum = toValue . ET.colNum . ET.fileLocation $ ET.errorMsg err
-
-decodeUtf8 :: BS8.ByteString -> T.Text
-decodeUtf8 = TE.decodeUtf8With TE.ignore

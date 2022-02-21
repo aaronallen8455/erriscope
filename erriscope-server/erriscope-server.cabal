@@ -33,22 +33,24 @@ executable erriscope-server
 
     -- Modules included in this executable, other than Main.
     other-modules: Erriscope.Html
+                   Erriscope.Html.SyntaxHighlighting
                    Erriscope.Sockets
 
     default-extensions: OverloadedStrings
     build-depends:    base >=4.14.0.0 && <4.17.0.0,
+                      blaze-html,
+                      blaze-markup,
+                      bytestring,
+                      containers,
+                      erriscope-types,
+                      file-embed,
+                      http-types,
+                      parsec,
+                      text,
+                      transformers,
                       wai,
                       wai-websockets,
                       warp,
-                      websockets,
-                      http-types,
-                      file-embed,
-                      erriscope-types,
-                      bytestring,
-                      containers,
-                      text,
-                      blaze-html,
-                      blaze-markup,
-                      transformers
+                      websockets
     hs-source-dirs:   app
     default-language: Haskell2010
