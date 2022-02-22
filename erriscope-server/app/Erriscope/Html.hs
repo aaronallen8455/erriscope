@@ -38,7 +38,8 @@ parseErrorId :: T.Text -> Maybe ErrorId
 parseErrorId txt
   | (ixTxt, pathTxt) <- T.dropWhile (== '-') <$> T.break (== '-') txt
   , Just ix <- readMaybe $ T.unpack ixTxt
-  = Just (ix, TE.encodeUtf8 $ T.replace "%" "/" pathTxt)
+  -- TODO Find something better than this hack
+  = Just (ix, TE.encodeUtf8 $ T.replace "(" "/" pathTxt)
   | otherwise = Nothing
 
 newtype ErrorCache =
@@ -221,7 +222,7 @@ mkErrorId :: ET.FileError -> Word -> ErrorId
 mkErrorId err idx =
   ( idx
   -- replace '/' so that it can be used as a url param
-  , BS8.intercalate "%" . BS8.split '/' $ ET.filepath err
+  , BS8.intercalate "(" . BS8.split '/' $ ET.filepath err
   )
 
 renderErrorId :: ErrorId -> AttributeValue

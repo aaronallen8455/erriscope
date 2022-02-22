@@ -85,11 +85,6 @@ app port errorsMVar request respond = do
                 [("Content-Type", "text/html")]
                 html
           _ -> do
-            -- TODO remove these
-            print (ix, file)
-            print (length <$> M.lookup file (fileErrors errorCache))
-            print (M.keys $ fileErrors errorCache)
-            print (length <$> fileErrors errorCache)
             respond $
               responseLBS
                 status404
