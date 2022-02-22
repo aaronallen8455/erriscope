@@ -35,6 +35,7 @@ executable sandbox
         base ^>=4.14.0.0,
         erriscope
     ghc-options: -fplugin Erriscope
+                 -fplugin-opt Erriscope:8083
                  -Wall
 
     hs-source-dirs:   app

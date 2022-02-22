@@ -4,6 +4,7 @@ module Erriscope.Html
   , renderViewport
   , renderSidebar
   , parseErrorId
+  , mkErrorId
   ) where
 
 import           Control.Applicative
@@ -220,7 +221,7 @@ mkErrorId :: ET.FileError -> Word -> ErrorId
 mkErrorId err idx =
   ( idx
   -- replace '/' so that it can be used as a url param
-  , mconcat . List.intersperse "%" . BS8.split '/' $ ET.filepath err
+  , BS8.intercalate "%" . BS8.split '/' $ ET.filepath err
   )
 
 renderErrorId :: ErrorId -> AttributeValue

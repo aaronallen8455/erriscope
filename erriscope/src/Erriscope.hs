@@ -46,6 +46,11 @@ knownFilesMVar :: MVar (M.Map ET.FilePath KnownFile)
 -- the file registered so that deleted file pruning will work.
 knownFilesMVar = unsafePerformIO $ newMVar mempty
 
+{-# NOINLINE portMVar #-}
+portMVar :: MVar ET.Port
+-- TODO this doesn't really need to exist
+portMVar = unsafePerformIO $ newMVar 8080 -- this value is overwritten on startup
+
 plugin :: Ghc.Plugin
 plugin = Ghc.defaultPlugin
   { Ghc.dynflagsPlugin = driverPlugin
@@ -57,6 +62,7 @@ plugin = Ghc.defaultPlugin
 driverPlugin :: [Ghc.CommandLineOption] -> Ghc.DynFlags -> IO Ghc.DynFlags
 driverPlugin opts dynFlags = do
   let port = ET.getPortFromArgs opts
+  _ <- swapMVar portMVar port
   initializeWebsocket port
 
   pure dynFlags
@@ -229,8 +235,9 @@ deleteErrorsForFile modFile = do
 
 sendMessage :: ET.Envelope -> IO ()
 sendMessage msg = do
+  port <- readMVar portMVar
   isConnected <- withMVar connMVar $ pure . isJust
-  unless isConnected (initializeWebsocket 8083)
+  unless isConnected (initializeWebsocket port)
 
   eErr <- try . withMVar connMVar . traverse_ $ \conn ->
     WS.sendBinaryData conn (ET.encodeEnvelope msg)
@@ -241,7 +248,7 @@ sendMessage msg = do
       if isResourceVanishedError err
          then do
            _ <- swapMVar connMVar Nothing
-           initializeWebsocket 8083
+           initializeWebsocket port
            connected <- withMVar connMVar $ pure . isJust
            if connected
               then sendMessage msg
