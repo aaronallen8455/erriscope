@@ -71,9 +71,9 @@ data Expr
 
 parseExpr :: Parser Expr
 parseExpr = P.choice $ P.try <$>
-  [ ReservedName <$> parseReservedName
+  [ Ident <$> parseIdentifier
+  , ReservedName <$> parseReservedName
   , Op <$> (parseReservedOp P.<|> parseOperator P.<|> parseInfixFunction)
-  , Ident <$> parseIdentifier
   , CharLit <$> parseCharLit
   , StringLit <$> parseStringLit
   , Number <$> parseNum

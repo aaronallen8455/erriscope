@@ -4,7 +4,7 @@ import           Data.List
 
 main :: IO ()
 main = do
-  putStrLn "He"
+  putStrLn "Hello"
   3 `print`
     4
-  putStrLn "Man"
+  putStrLn "World"

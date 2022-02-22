@@ -114,6 +114,7 @@ renderErrorBody = replaceQuotes . decodeUtf8 . ET.body
       , labeledCodeBlock "Expected type"
       , labeledCodeBlock "Actual type"
       , labeledCodeBlock "variable not in scope"
+      , labeledCodeBlock "Variable not in scope"
       , labeledCodeBlock "To import instances alone, use"
       ]
     replaceQuotes = foldMap go . T.split (== '‘')
