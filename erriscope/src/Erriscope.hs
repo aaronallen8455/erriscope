@@ -33,7 +33,7 @@ connMVar = unsafePerformIO $ newMVar Nothing
 data KnownFile =
   MkKnownFile
     { modName :: !(Maybe ET.ModuleName)
-    , emittedErrors :: !(S.Set ET.ErrorBody)
+    , emittedErrors :: !(S.Set (ET.ErrorBody, ET.Location))
     -- ^ It is necessary to track the errors that have been emitted for a file
     -- because when compiling with multiple targets in stack, the log action
     -- is run for each target which means duplicate errors would be emitted.
@@ -178,17 +178,17 @@ reportError dynFlags severity srcSpan msgDoc
         Just knownFile -> do
           let errBody = BSL.toStrict . BSB.toLazyByteString . BSB.stringUtf8
                       $ Ghc.showSDocForUser dynFlags Ghc.neverQualify msgDoc
-          if errBody `S.member` emittedErrors knownFile
+              loc = ET.MkLocation
+                { ET.lineNum = fromIntegral $ Ghc.srcSpanStartLine rss
+                , ET.colNum = fromIntegral $ Ghc.srcSpanStartCol rss
+                }
+          if (errBody, loc) `S.member` emittedErrors knownFile
              then pure (knownFiles, Nothing)
              else do
               let mModName = modName knownFile
               caret <- Ghc.showSDocForUser dynFlags Ghc.neverQualify
                    <$> Ghc.getCaretDiagnostic severity srcSpan
-              let loc = ET.MkLocation
-                    { ET.lineNum = fromIntegral $ Ghc.srcSpanStartLine rss
-                    , ET.colNum = fromIntegral $ Ghc.srcSpanStartCol rss
-                    }
-                  fileErr = ET.MkFileError
+              let fileErr = ET.MkFileError
                     { ET.moduleName = mModName
                     , ET.filepath = modFile
                     , ET.errorMsg = ET.MkErrorMsg
@@ -205,7 +205,7 @@ reportError dynFlags severity srcSpan msgDoc
                       , ET.message = ET.AddError fileErr
                       }
                   addEmittedError kf =
-                    kf { emittedErrors = S.insert errBody $ emittedErrors kf }
+                    kf { emittedErrors = S.insert (errBody, loc) $ emittedErrors kf }
                   newKnownFiles = M.adjust addEmittedError modFile knownFiles
               pure (newKnownFiles, Just errorMessage)
 

@@ -117,7 +117,7 @@ data Location =
   MkLocation
     { lineNum :: Word
     , colNum :: Word
-    }
+    } deriving (Eq, Ord)
 
 instance Serialize Location where
   put MkLocation{..} = put (lineNum, colNum)

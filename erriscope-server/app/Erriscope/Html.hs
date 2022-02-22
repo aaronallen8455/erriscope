@@ -10,29 +10,26 @@ import           Control.Applicative
 import           Control.Monad
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Char8 as BS8
+import           Data.Char (isSpace)
 import           Data.Foldable
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import           Data.Maybe
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
+import qualified Data.Text.Encoding.Error as TE
 import           Data.Word
 import           Prelude hiding (div, span)
+import qualified Prelude
 import           Text.Blaze.Html5
 import           Text.Blaze.Html5.Attributes as A hiding (span)
 import           Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 import           Text.Read (readMaybe)
 
-import           Erriscope.Html.SyntaxHighlighting (highlightSyntax, decodeUtf8)
+import           Erriscope.Html.SyntaxHighlighting (highlightSyntax)
 import qualified Erriscope.Types as ET
 
 type RenderedHtml = LBS.ByteString
-
--- The selected error needs to be known on the server. Perhaps have an identifier
--- for errors. Could be the filename + numeric index. Then the rendered viewport
--- html can be keyed on that identifier and it can be placed in the preview html
--- as a data attribute. The identifier of the selected error can be kept as a
--- separate field which is used during rendering the sidebar html.
 
 type ErrorId = (Word, ET.FilePath)
 
@@ -75,18 +72,96 @@ renderViewport fileErr = renderHtml $ do
   div ! class_ "error-body" $
     renderErrorBody err
   div ! class_ "error-caret" $
-    toMarkup . decodeUtf8 $ ET.caret err
+    renderCaret err
 
--- TODO be selective about what parts of the message get syntax highlighting.
--- "In ...:"
---
--- "variable not in scope:"
---
--- anything between '‘' '’'
+-- | Create HTML for the caret portion of the error.
+renderCaret :: ET.ErrorMsg -> Html
+renderCaret err = highlight . decodeUtf8 $ ET.caret err
+  where
+    highlight inp =
+      case T.lines inp of
+        [l1, l2, l3] -> do
+          doLine toMarkup l1
+          "\n"
+          doLine highlightSyntax l2
+          "\n"
+          doLine highlightCaret l3
+        _ -> toMarkup inp
+    doLine f ln =
+      let (before, after) = T.break (== '|') ln
+       in do
+         span ! class_ "caret-gutter" $ toMarkup before <> "|"
+         f $ T.drop 1 after
+    highlightCaret l =
+      let (before, c) = T.span isSpace l
+          (caret, rest) = T.span (== '^') c
+          caretClass = case ET.errorType err of
+                         ET.Error -> "caret-error"
+                         ET.Warning -> "caret-warning"
+       in toMarkup before
+       <> (span ! class_ caretClass) (toMarkup caret)
+       <> toMarkup rest
+
+-- TODO be more selective about what parts of the message get syntax highlighting.
 --
 -- "the infered types of"
+--
 renderErrorBody :: ET.ErrorMsg -> Html
-renderErrorBody = highlightSyntax . ET.body -- '‘' '’'
+renderErrorBody = replaceQuotes . decodeUtf8 . ET.body
+  where
+    highlight = highlightCodeBlock
+      [ inCodeBlock
+      , labeledCodeBlock "Expected type"
+      , labeledCodeBlock "Actual type"
+      , labeledCodeBlock "variable not in scope"
+      , labeledCodeBlock "To import instances alone, use"
+      ]
+    replaceQuotes = foldMap go . T.split (== '‘')
+    go t
+      | [codeSnippet, rest] <- T.split (== '’') t
+      = toMarkup '‘' <> highlightSyntax codeSnippet <> toMarkup '’'
+     <> highlight rest
+    go t = highlight t
+
+-- | Identify a code snippet within the input and do syntax highlighting.
+highlightCodeBlock :: [T.Text -> Maybe (T.Text, T.Text)] -> T.Text -> Html
+highlightCodeBlock (fn:preds) inp =
+  fromMaybe (highlightCodeBlock preds inp) $ do
+    (before, codeBlock) <- fn inp
+    (inCode, rest) <- getIndentedPortion codeBlock
+    pure $ highlightCodeBlock preds before
+        <> highlightSyntax inCode
+        <> highlightCodeBlock (fn:preds) rest
+highlightCodeBlock [] inp = toMarkup inp
+
+-- | Captures the start of code blocks prefixed by "In ...:" statements
+inCodeBlock :: T.Text -> Maybe (T.Text, T.Text)
+inCodeBlock inp = do
+  let (before, after) = T.breakOn "In " inp
+  guard $ not (T.null after)
+  let (inStmt, codeBlock) = T.span (\c -> c /= ':' && c /= '\n') after
+  (':', inCode) <- T.uncons codeBlock
+  pure (before <> inStmt <> ":", inCode)
+
+labeledCodeBlock :: T.Text -> T.Text -> Maybe (T.Text, T.Text)
+labeledCodeBlock herald inp = do
+  let (before, after) = T.breakOn herald inp
+  (':', inCode) <- T.uncons =<< T.stripPrefix herald after
+  pure (before <> herald <> ":", inCode)
+
+-- | When an error contains a block of code, the end of that block can usually
+-- be determined by finding the next line where the indentation has changed.
+getIndentedPortion :: T.Text -> Maybe (T.Text, T.Text)
+getIndentedPortion inp = do
+  let lns = T.lines inp
+      getIndentation = T.length . T.takeWhile isSpace
+  (prefix, l : rest) <- pure $ Prelude.span T.null lns
+  let ind = getIndentation l
+      ind' = if ind <= 1 then maxBound else ind
+      (inBlock, out) =
+        break (\x -> not (T.null x) && getIndentation x < ind')
+              rest
+  pure (T.unlines $ prefix ++ l : inBlock, T.unlines out)
 
 renderSidebar :: ErrorCache -> RenderedHtml
 renderSidebar errorCache = renderHtml $ do
@@ -168,3 +243,6 @@ renderErrorPreview =
 --   where
 --     lineNum = toValue . ET.lineNum . ET.fileLocation $ ET.errorMsg err
 --     colNum = toValue . ET.colNum . ET.fileLocation $ ET.errorMsg err
+
+decodeUtf8 :: BS8.ByteString -> T.Text
+decodeUtf8 = TE.decodeUtf8With TE.ignore

@@ -34,6 +34,7 @@ executable erriscope-server
     -- Modules included in this executable, other than Main.
     other-modules: Erriscope.Html
                    Erriscope.Html.SyntaxHighlighting
+                   Erriscope.Html.TokenParser
                    Erriscope.Sockets
 
     default-extensions: OverloadedStrings

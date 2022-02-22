@@ -2,16 +2,12 @@
 {-# LANGUAGE LambdaCase #-}
 module Erriscope.Html.SyntaxHighlighting
   ( highlightSyntax
-  , decodeUtf8
   ) where
 
 import           Control.Applicative
-import qualified Data.ByteString.Char8 as BS8
 import           Data.Char (isSpace, isUpper)
 import           Data.Foldable
 import qualified Data.Text as T
-import qualified Data.Text.Encoding as TE
-import qualified Data.Text.Encoding.Error as TE
 import           Prelude hiding (span)
 import           Text.Blaze.Html5
 import           Text.Blaze.Html5.Attributes as A hiding (span)
@@ -19,7 +15,17 @@ import qualified Text.Parsec as P
 import qualified Text.Parsec.Language as P
 import qualified Text.Parsec.Token as P
 
+import           Erriscope.Html.TokenParser (makeTokenParser)
+
+import           Debug.Trace
+
 type Parser = P.Parsec String ()
+
+highlightSyntax :: T.Text -> Html
+highlightSyntax inp =
+  case P.runParser (P.many parseExpr <* P.eof) () "" $ T.unpack inp of
+    Left err -> traceShow err toMarkup inp
+    Right exprs -> exprsToHtml exprs
 
 parseIdentifier, parseOperator, parseStringLit :: Parser String
 parseNatOrFloat :: Parser (Either Integer Double)
@@ -34,7 +40,7 @@ P.TokenParser
   , P.parens = parseParens
   , P.brackets = parseBrackets
   , P.braces = parseBraces
-  } = P.haskell
+  } = makeTokenParser P.haskellDef
 
 reservedNames, reservedOpNames :: [String]
 P.LanguageDef
@@ -66,7 +72,7 @@ data Expr
 parseExpr :: Parser Expr
 parseExpr = P.choice $ P.try <$>
   [ ReservedName <$> parseReservedName
-  , Op <$> (parseReservedOp P.<|> parseOperator)
+  , Op <$> (parseReservedOp P.<|> parseOperator P.<|> parseInfixFunction)
   , Ident <$> parseIdentifier
   , CharLit <$> parseCharLit
   , StringLit <$> parseStringLit
@@ -79,9 +85,15 @@ parseExpr = P.choice $ P.try <$>
   , Whitespace <$> P.many1 (P.satisfy isSpace)
   ]
 
+parseInfixFunction :: Parser String
+parseInfixFunction = do
+  x <- P.between (P.char '`') (P.char '`')
+         $ P.many1 (P.satisfy (\x -> not (isSpace x) && x /= '`'))
+  pure $ '`' : x ++ "`"
+
 parseReservedName :: Parser String
 parseReservedName =
-  P.choice $ P.try . P.string <$> reservedNames
+  P.choice $ P.try . P.string <$> "()" : reservedNames
 
 parseReservedOp :: Parser String
 parseReservedOp =
@@ -107,12 +119,6 @@ parseLineComment = do
 
 exprsToHtml :: [Expr] -> Html
 exprsToHtml = foldMap exprToHtml
-
-highlightSyntax :: BS8.ByteString -> Html
-highlightSyntax inp =
-  case P.runParser (P.many parseExpr <* P.eof) () "" $ BS8.unpack inp of
-    Left _ -> toMarkup $ decodeUtf8 inp
-    Right exprs -> exprsToHtml exprs
 
 exprToHtml :: Expr -> Html
 exprToHtml = \case
@@ -141,6 +147,3 @@ exprToHtml = \case
   LineComment c -> span ! class_ "syn-comment" $ "--" <> toMarkup c
   ReservedName n -> span ! class_ "syn-reserved-name" $ toMarkup n
   Whitespace w -> toMarkup w
-
-decodeUtf8 :: BS8.ByteString -> T.Text
-decodeUtf8 = TE.decodeUtf8With TE.ignore

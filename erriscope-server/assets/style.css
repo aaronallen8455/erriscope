@@ -198,3 +198,60 @@ html {
   margin-right: 25px;
   font-size: .8em;
 }
+
+/* Syntax highlighting */
+.syn-uc-identifier {
+  color: #7de686;
+}
+
+.syn-lc-identifier {
+  color: #bcffda;
+}
+
+.syn-operator {
+  color: #ff7b72;
+}
+
+.syn-char-lit {
+  color: #a5d6ff;
+}
+
+.syn-string-lit {
+  color: #a5d6ff;
+}
+
+.syn-number {
+  color: #79c0ff;
+}
+
+.syn-paren {
+  color: #ff7b72;
+}
+
+.syn-brace {
+  color: #ff7b72;
+}
+
+.syn-bracket {
+  color: #ff7b72;
+}
+
+.syn-comment {
+  color: #8a939d;
+}
+
+.syn-reserved-name {
+  color: #ff7b72;
+}
+
+.caret-error {
+  color: #ff0048;
+}
+
+.caret-warning {
+  color: #ea4fd2;
+}
+
+.caret-gutter {
+  color: #acacac;
+}
