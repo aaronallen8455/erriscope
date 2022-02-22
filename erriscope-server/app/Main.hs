@@ -31,10 +31,10 @@ main = do
 
 startingHerald :: ET.Port -> IO ()
 startingHerald port = do
-  let herald = "* Starting Erriscope Server on Port " <> show port <> " *"
-  putStrLn $ replicate (length herald) '*'
+  let herald = "= Starting Erriscope Server on Port " <> show port <> " ="
+  putStrLn $ replicate (length herald) '='
   putStrLn herald
-  putStrLn $ replicate (length herald) '*'
+  putStrLn $ replicate (length herald) '='
 
 app :: ET.Port -> MVar ErrorCache -> Application
 app port errorsMVar request respond = do

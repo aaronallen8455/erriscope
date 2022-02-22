@@ -17,14 +17,12 @@ import qualified Text.Parsec.Token as P
 
 import           Erriscope.Html.TokenParser (makeTokenParser)
 
-import           Debug.Trace
-
 type Parser = P.Parsec String ()
 
 highlightSyntax :: T.Text -> Html
 highlightSyntax inp =
   case P.runParser (P.many parseExpr <* P.eof) () "" $ T.unpack inp of
-    Left err -> traceShow err toMarkup inp
+    Left _ -> toMarkup inp
     Right exprs -> exprsToHtml exprs
 
 parseIdentifier, parseOperator, parseStringLit :: Parser String
@@ -77,9 +75,9 @@ parseExpr = P.choice $ P.try <$>
   , CharLit <$> parseCharLit
   , StringLit <$> parseStringLit
   , Number <$> parseNum
-  , Parens <$> parseParens (P.many1 parseExpr)
-  , Brackets <$> parseBrackets (P.many1 parseExpr)
-  , Braces <$> parseBraces (P.many1 parseExpr)
+  , Parens <$> parseParens (P.many parseExpr)
+  , Brackets <$> parseBrackets (P.many parseExpr)
+  , Braces <$> parseBraces (P.many parseExpr)
   , MultiLineComment <$> parseMultiLineComment
   , LineComment <$> parseLineComment
   , Whitespace <$> P.many1 (P.satisfy isSpace)
@@ -93,7 +91,7 @@ parseInfixFunction = do
 
 parseReservedName :: Parser String
 parseReservedName =
-  P.choice $ P.try . P.string <$> "()" : reservedNames
+  P.choice $ P.try . P.string <$> reservedNames
 
 parseReservedOp :: Parser String
 parseReservedOp =
