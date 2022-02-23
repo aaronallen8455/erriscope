@@ -28,16 +28,12 @@ highlightSyntax inp =
 parseIdentifier, parseOperator, parseStringLit :: Parser String
 parseNatOrFloat :: Parser (Either Integer Double)
 parseCharLit :: Parser Char
-parseParens, parseBrackets, parseBraces :: Parser a -> Parser a
 P.TokenParser
   { P.identifier = parseIdentifier
   , P.operator = parseOperator
   , P.charLiteral = parseCharLit
   , P.stringLiteral = parseStringLit
   , P.naturalOrFloat = parseNatOrFloat
-  , P.parens = parseParens
-  , P.brackets = parseBrackets
-  , P.braces = parseBraces
   } = makeTokenParser P.haskellDef
 
 reservedNames, reservedOpNames :: [String]
@@ -58,9 +54,6 @@ data Expr
   | CharLit Char
   | StringLit String
   | Number String
-  | Parens [Expr]
-  | Brackets [Expr]
-  | Braces [Expr]
   | MultiLineComment String
   | LineComment String
   | ReservedName String
@@ -75,9 +68,6 @@ parseExpr = P.choice $ P.try <$>
   , CharLit <$> parseCharLit
   , StringLit <$> parseStringLit
   , Number <$> parseNum
-  , Parens <$> parseParens (P.many parseExpr)
-  , Brackets <$> parseBrackets (P.many parseExpr)
-  , Braces <$> parseBraces (P.many parseExpr)
   , MultiLineComment <$> parseMultiLineComment
   , LineComment <$> parseLineComment
   , Whitespace <$> P.many1 (P.satisfy isSpace)
@@ -91,7 +81,8 @@ parseInfixFunction = do
 
 parseReservedName :: Parser String
 parseReservedName =
-  P.choice $ P.try . P.string <$> reservedNames
+  P.choice $ P.try . P.string <$>
+    "," : "{" : "}" : "[" : "]" : "(" : ")" : reservedNames
 
 parseReservedOp :: Parser String
 parseReservedOp =
@@ -129,18 +120,6 @@ exprToHtml = \case
   CharLit c -> span ! class_ "syn-char-lit" $ "'" <> toMarkup c <> "'"
   StringLit s -> span ! class_ "syn-string-lit" $ "\"" <> toMarkup s <> "\""
   Number n -> span ! class_ "syn-number" $ toMarkup n
-  Parens xs -> do
-    span ! class_ "syn-paren" $ "("
-    exprsToHtml xs
-    span ! class_ "syn-paren" $ ")"
-  Brackets xs -> do
-    span ! class_ "syn-paren" $ "["
-    exprsToHtml xs
-    span ! class_ "syn-paren" $ "]"
-  Braces xs -> do
-    span ! class_ "syn-paren" $ "{"
-    exprsToHtml xs
-    span ! class_ "syn-paren" $ "}"
   MultiLineComment c -> span ! class_ "syn-comment" $ "{-" <> toMarkup c <> "-}"
   LineComment c -> span ! class_ "syn-comment" $ "--" <> toMarkup c
   ReservedName n -> span ! class_ "syn-reserved-name" $ toMarkup n

@@ -118,8 +118,8 @@ html {
 
 /* Viewport */
 #viewport {
-  width: calc(100% - 180px);
-  margin-left: 180px;
+  width: calc(100% - 183px);
+  margin-left: 183px;
   height: 100%;
   position: relative;
   color: white;
@@ -199,6 +199,17 @@ html {
   font-size: .8em;
 }
 
+@media screen and (min-width: 1200px) {
+  #sidebar {
+    left: 0px;
+  }
+
+  #viewport {
+    margin-left: 603px;
+    width: calc(100% - 603px);
+  }
+}
+
 /* Syntax highlighting */
 .syn-uc-identifier {
   color: #7de686;
@@ -222,18 +233,6 @@ html {
 
 .syn-number {
   color: #79c0ff;
-}
-
-.syn-paren {
-  color: #ff7b72;
-}
-
-.syn-brace {
-  color: #ff7b72;
-}
-
-.syn-bracket {
-  color: #ff7b72;
 }
 
 .syn-comment {

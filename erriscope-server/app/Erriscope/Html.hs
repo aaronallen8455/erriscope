@@ -4,7 +4,6 @@ module Erriscope.Html
   , renderViewport
   , renderSidebar
   , parseErrorId
-  , mkErrorId
   ) where
 
 import           Control.Applicative
