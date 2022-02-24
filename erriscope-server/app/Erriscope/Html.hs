@@ -70,10 +70,9 @@ renderViewport fileErr = renderHtml $ do
       toMarkup $ decodeUtf8 modName
     span ! class_ "location" $
       "(" <> renderLocation (ET.fileLocation err) <> ")"
-  div ! class_ "error-body" $
+  div ! class_ "error-body" $ do
     renderErrorBody err
-  div ! class_ "error-caret" $
-    renderCaret err
+    p $ renderCaret err
 
 -- | Create HTML for the caret portion of the error.
 renderCaret :: ET.ErrorMsg -> Html
@@ -112,11 +111,12 @@ renderErrorBody = replaceQuotes . decodeUtf8 . ET.body
   where
     highlight = highlightCodeBlock
       [ inCodeBlock
-      , labeledCodeBlock "Expected type"
-      , labeledCodeBlock "Actual type"
-      , labeledCodeBlock "variable not in scope"
-      , labeledCodeBlock "Variable not in scope"
-      , labeledCodeBlock "To import instances alone, use"
+      -- first character chopped off to account for differing capitalization
+      , labeledCodeBlock "xpected type:"
+      , labeledCodeBlock "ctual type:"
+      , labeledCodeBlock "ariable not in scope:"
+      , labeledCodeBlock "To import instances alone, use:"
+      , labeledCodeBlock "elevant bindings include"
       ]
     replaceQuotes = foldMap go . T.split (== '‘')
     go t
@@ -148,8 +148,9 @@ inCodeBlock inp = do
 labeledCodeBlock :: T.Text -> T.Text -> Maybe (T.Text, T.Text)
 labeledCodeBlock herald inp = do
   let (before, after) = T.breakOn herald inp
-  (':', inCode) <- T.uncons =<< T.stripPrefix herald after
-  pure (before <> herald <> ":", inCode)
+  guard . not $ T.null after
+  inCode <- T.stripPrefix herald after
+  pure (before <> herald, inCode)
 
 -- | When an error contains a block of code, the end of that block can usually
 -- be determined by finding the next line where the indentation has changed.

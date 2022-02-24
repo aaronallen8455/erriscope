@@ -5,6 +5,7 @@ module Erriscope.Html.SyntaxHighlighting
   ) where
 
 import           Control.Applicative
+import           Control.Monad
 import           Data.Char (isSpace, isUpper)
 import           Data.Foldable
 import qualified Data.Text as T
@@ -62,14 +63,14 @@ data Expr
 
 parseExpr :: Parser Expr
 parseExpr = P.choice $ P.try <$>
-  [ Ident <$> parseIdentifier
+  [ MultiLineComment <$> parseMultiLineComment
+  , LineComment <$> parseLineComment
+  , Ident <$> parseIdentifier
   , ReservedName <$> parseReservedName
   , Op <$> (parseReservedOp P.<|> parseOperator P.<|> parseInfixFunction)
   , CharLit <$> parseCharLit
   , StringLit <$> parseStringLit
   , Number <$> parseNum
-  , MultiLineComment <$> parseMultiLineComment
-  , LineComment <$> parseLineComment
   , Whitespace <$> P.many1 (P.satisfy isSpace)
   ]
 
@@ -82,7 +83,7 @@ parseInfixFunction = do
 parseReservedName :: Parser String
 parseReservedName =
   P.choice $ P.try . P.string <$>
-    "," : "{" : "}" : "[" : "]" : "(" : ")" : reservedNames
+    "_" : "," : "{" : "}" : "[" : "]" : "(" : ")" : reservedNames
 
 parseReservedOp :: Parser String
 parseReservedOp =
@@ -94,7 +95,7 @@ parseMultiLineComment = do
   inMultiLine
   where
     inMultiLine =
-            ([] <$ P.try (P.string "-}"))
+            P.try (P.string "-}") P.<|> ([] <$ P.eof)
       P.<|> liftA2 (:) P.anyChar inMultiLine
 
 parseLineComment :: Parser String
@@ -103,7 +104,7 @@ parseLineComment = do
   inComment
   where
     inComment =
-            ([] <$ P.try P.newline)
+            ([] <$ (void P.newline P.<|> P.eof))
       P.<|> liftA2 (:) P.anyChar inComment
 
 exprsToHtml :: [Expr] -> Html
@@ -120,7 +121,7 @@ exprToHtml = \case
   CharLit c -> span ! class_ "syn-char-lit" $ "'" <> toMarkup c <> "'"
   StringLit s -> span ! class_ "syn-string-lit" $ "\"" <> toMarkup s <> "\""
   Number n -> span ! class_ "syn-number" $ toMarkup n
-  MultiLineComment c -> span ! class_ "syn-comment" $ "{-" <> toMarkup c <> "-}"
+  MultiLineComment c -> span ! class_ "syn-comment" $ "{-" <> toMarkup c
   LineComment c -> span ! class_ "syn-comment" $ "--" <> toMarkup c
   ReservedName n -> span ! class_ "syn-reserved-name" $ toMarkup n
   Whitespace w -> toMarkup w

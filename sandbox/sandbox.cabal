@@ -32,10 +32,11 @@ executable sandbox
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
     build-depends:
-        base ^>=4.14.0.0,
+        base >=4.14.0.0 && <4.17.0.0,
         erriscope
     ghc-options: -fplugin Erriscope
                  -fplugin-opt Erriscope:8083
+                 -O0
                  -Wall
 
     hs-source-dirs:   app

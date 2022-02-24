@@ -136,14 +136,14 @@ function populateViewport(viewportEl) {
     if (upArrow !== null) {
       upArrow.addEventListener(
         'click',
-        selectNext.bind(null, populateViewport.bind(null, viewportEl))
+        selectPrev.bind(null, populateViewport.bind(null, viewportEl))
       );
     }
     const downArrow = document.getElementById('nav-down-arrow');
     if (downArrow !== null) {
       downArrow.addEventListener(
         'click',
-        selectPrev.bind(null, populateViewport.bind(null, viewportEl))
+        selectNext.bind(null, populateViewport.bind(null, viewportEl))
       );
     }
 

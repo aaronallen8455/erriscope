@@ -104,7 +104,7 @@ instance Serialize ErrorMsg where
 data ErrorType
   = Error
   | Warning
-  deriving (Enum, Bounded, Eq)
+  deriving (Enum, Bounded, Eq, Show)
 
 instance Serialize ErrorType where
   put = put @Word8 . fromIntegral . fromEnum

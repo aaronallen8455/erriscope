@@ -10,7 +10,7 @@ html {
 /* Sidebar */
 #sidebar {
   position: fixed;
-  width: 600px;
+  width: 550px;
   height: 100%;
   left: -420px;
   top: 0px;
@@ -90,7 +90,6 @@ html {
   border-radius: 7px;
   padding: 4px 6px 2px 6px;
   vertical-align: middle;
-  margin-right: 10px;
 }
 
 .severity-error {
@@ -118,29 +117,29 @@ html {
 
 /* Viewport */
 #viewport {
-  width: calc(100% - 183px);
-  margin-left: 183px;
+  width: calc(100% - 133px);
+  margin-left: 133px;
   height: 100%;
   position: relative;
   color: white;
 }
 
 .error-heading {
-  font-size: 1.3em;
+  font-size: 1.2em;
   font-weight: bold;
   padding: 20px;
   width: 100%;
-  display: block;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
   box-sizing: border-box;
 }
 
 .error-heading .location {
   font-weight: initial;
   color: #acacac;
-}
-
-.error-heading > * {
-  margin-right: 8px;
 }
 
 .nav-arrows {
@@ -157,6 +156,10 @@ html {
 
 .nav-arrows :hover {
   color: white;
+}
+
+.mod-name {
+  word-break: break-all;
 }
 
 .error-body {
@@ -205,8 +208,8 @@ html {
   }
 
   #viewport {
-    margin-left: 603px;
-    width: calc(100% - 603px);
+    margin-left: 553px;
+    width: calc(100% - 553px);
   }
 }
 
