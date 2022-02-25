@@ -1,4 +1,4 @@
-module M where
+module Lib where
 
 import           Data.List
 
