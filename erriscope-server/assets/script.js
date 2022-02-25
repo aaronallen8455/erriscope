@@ -4,19 +4,16 @@ let selectedElement = null;
 window.onload = main;
 
 function main() {
-  const sidebarEl = document.getElementById('sidebar');
-  const viewportEl = document.getElementById('viewport');
-  const popViewport = populateViewport.bind(null, viewportEl);
-  initSocket(sidebarEl, popViewport);
-  window.addEventListener('keydown', keydownHandler.bind(null, popViewport));
+  initSocket();
+  window.addEventListener('keydown', keydownHandler);
 }
 
-function initSocket(sidebarEl, popViewport) {
+function initSocket() {
   const socket = new WebSocket('ws://localhost:' + socketPort);
   socket.addEventListener('open', socketOpenHandler);
   socket.addEventListener(
     'message',
-    socketMessageHandler.bind(null, sidebarEl, popViewport)
+    socketMessageHandler
   );
   socket.addEventListener('closed', handleSocketClose);
   socket.addEventListener('error', handleSocketClose);
@@ -26,15 +23,15 @@ function handleSocketClose(ev) {
   console.log('socket closed! ' + ev);
 }
 
-function keydownHandler(popViewport, ev) {
+function keydownHandler(ev) {
   if (ev.shiftKey) {
     switch (ev.key) {
       case "ArrowDown":
-        selectNext(popViewport);
+        selectNext();
         ev.preventDefault();
         break;
       case "ArrowUp":
-        selectPrev(popViewport);
+        selectPrev();
         ev.preventDefault();
         break;
     }
@@ -48,11 +45,11 @@ function socketOpenHandler(ev) {
 }
 
 // Select the first error if there is no currently selected error
-function selectFirstError(popViewport) {
+function selectFirstError() {
   const errors = document.getElementsByClassName('error');
   let firstError = null;
   if (firstError = errors[0]) {
-    selectError(popViewport, firstError);
+    selectError(firstError);
   } else {
     // no errors
     selectedElement = null;
@@ -60,48 +57,49 @@ function selectFirstError(popViewport) {
 }
 
 // Cycle forward through errors
-function selectNext(popViewport) {
+function selectNext() {
   const errorEls = Array.from(document.getElementsByClassName('error'));
   const curIdx = errorEls.findIndex(x => x === selectedElement);
   const newIdx = (curIdx >= errorEls.length - 1) ? 0 : (curIdx + 1);
-  selectError(popViewport, errorEls[newIdx]);
+  selectError(errorEls[newIdx]);
 }
 
 // Cycle back through errors
-function selectPrev(popViewport) {
+function selectPrev() {
   const errorEls = Array.from(document.getElementsByClassName('error'));
   const curIdx = errorEls.findIndex(x => x === selectedElement);
   const newIdx = curIdx <= 0 ? (errorEls.length - 1) : (curIdx - 1);
-  selectError(popViewport, errorEls[newIdx]);
+  selectError(errorEls[newIdx]);
 }
 
 // Select the error represented by the given DOM element
-function selectError(popViewport, element) {
+function selectError(element) {
   if (element !== selectedElement) {
     selectedElement && selectedElement.classList.remove('selected');
     selectedElement = element;
     element.classList.add('selected');
-    popViewport();
+    populateViewport();
   }
 }
 
 // Reselect the currently selected error after the sidebar has been refreshed
-function reselectError(popViewport) {
+function reselectError() {
   if (selectedElement) {
     let errorId = selectedElement.id;
     let newError = null;
     if (newError = document.getElementById(errorId)) {
-      selectError(popViewport, newError);
+      selectError(newError);
     } else {
-      selectFirstError(popViewport);
+      selectFirstError();
     }
   } else {
-    selectFirstError(popViewport);
+    selectFirstError();
   }
 }
 
 // Handler for socket message event
-function socketMessageHandler(sidebarEl, popViewport, ev) {
+function socketMessageHandler(ev) {
+  const sidebarEl = document.getElementById('sidebar');
   const sidebarHtml = ev.data;
   sidebarEl.innerHTML = sidebarHtml;
   // attach handlers
@@ -109,25 +107,26 @@ function socketMessageHandler(sidebarEl, popViewport, ev) {
   Array.from(previewEls, el =>
     el.addEventListener(
       'click',
-      previewClickHandler.bind(null, popViewport)
+      previewClickHandler
     )
   );
-  reselectError(popViewport);
+  reselectError();
   if (selectedElement === null) {
     clearViewport();
   }
 }
 
 // Handle click on an error preview. Triggers viewport population.
-function previewClickHandler(popViewport, ev) {
-  selectError(popViewport, ev.currentTarget);
+function previewClickHandler(ev) {
+  selectError(ev.currentTarget);
 }
 
 // Make a request for the viewport html of currently selected error and add it
 // to the DOM.
-function populateViewport(viewportEl) {
+function populateViewport() {
   // make request for html for current selected error
   const selectedId = selectedElement ? selectedElement.id : "";
+  const viewportEl = document.getElementById('viewport');
   const url = '/error/' + selectedId;
   const req = new Request(url);
   const renderViewport = html => {
@@ -136,14 +135,14 @@ function populateViewport(viewportEl) {
     if (upArrow !== null) {
       upArrow.addEventListener(
         'click',
-        selectPrev.bind(null, populateViewport.bind(null, viewportEl))
+        selectPrev
       );
     }
     const downArrow = document.getElementById('nav-down-arrow');
     if (downArrow !== null) {
       downArrow.addEventListener(
         'click',
-        selectNext.bind(null, populateViewport.bind(null, viewportEl))
+        selectNext
       );
     }
 

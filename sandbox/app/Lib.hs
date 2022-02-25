@@ -2,5 +2,5 @@ module Lib where
 
 import           Data.List
 
-foo :: Int
+foo :: String
 foo = 8 --"test"
