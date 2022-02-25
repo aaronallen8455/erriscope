@@ -1,3 +1,4 @@
+{-# LANGUAGE ImplicitParams #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE LambdaCase #-}
 module Erriscope
@@ -46,24 +47,18 @@ knownFilesMVar :: MVar (M.Map ET.FilePath KnownFile)
 -- the file registered so that deleted file pruning will work.
 knownFilesMVar = unsafePerformIO $ newMVar mempty
 
-{-# NOINLINE portMVar #-}
-portMVar :: MVar ET.Port
--- TODO this doesn't really need to exist
-portMVar = unsafePerformIO $ newMVar 8080 -- this value is overwritten on startup
-
 plugin :: Ghc.Plugin
 plugin = Ghc.defaultPlugin
   { Ghc.dynflagsPlugin = driverPlugin
   , Ghc.pluginRecompile = Ghc.purePlugin
-  , Ghc.parsedResultAction = const parsedResult
+  , Ghc.parsedResultAction = parsedResult
   }
 
 -- | Overrides the log action and the phase hook.
 driverPlugin :: [Ghc.CommandLineOption] -> Ghc.DynFlags -> IO Ghc.DynFlags
 driverPlugin opts dynFlags = do
-  let port = ET.getPortFromArgs opts
-  _ <- swapMVar portMVar port
-  initializeWebsocket port
+  let ?port = ET.getPortFromArgs opts
+  initializeWebsocket
 
   pure dynFlags
 #if MIN_VERSION_ghc(9,0,0)
@@ -88,7 +83,7 @@ driverPlugin opts dynFlags = do
 
 -- | When a module starts compiling, delete all existing errors for the file
 -- and also prune deleted files.
-beginCompilation :: ET.FilePath -> IO ()
+beginCompilation :: (?port :: ET.Port) => ET.FilePath -> IO ()
 beginCompilation modFile = do
   deleteErrorsForFile modFile
   modifyMVar_ knownFilesMVar $
@@ -98,7 +93,7 @@ beginCompilation modFile = do
 
 -- | Check for any known files that have been deleted and remove it from the
 -- server and known files map.
-pruneDeletedFiles :: IO ()
+pruneDeletedFiles :: (?port :: ET.Port) => IO ()
 pruneDeletedFiles = do
   knownFiles <- readMVar knownFilesMVar
   let go filePath _ = do
@@ -110,8 +105,8 @@ pruneDeletedFiles = do
   void $ M.traverseWithKey go knownFiles
 
 -- | Opens the websocket connection
-initializeWebsocket :: ET.Port -> IO ()
-initializeWebsocket port =
+initializeWebsocket :: (?port :: ET.Port) => IO ()
+initializeWebsocket =
   modifyMVar_ connMVar $ \case
     Just conn -> pure (Just conn)
     Nothing -> do
@@ -120,9 +115,9 @@ initializeWebsocket port =
         let hints = Sock.defaultHints {Sock.addrSocketType = Sock.Stream}
             -- Correct host and path.
             host = "127.0.0.1"
-            fullHost = if port == 80 then host else host ++ ":" ++ show port
+            fullHost = if ?port == 80 then host else host ++ ":" ++ show ?port
         addr:_ <- ExceptT . tryAny $
-          Sock.getAddrInfo (Just hints) (Just host) (Just $ show port)
+          Sock.getAddrInfo (Just hints) (Just host) (Just $ show ?port)
         sock <- ExceptT . tryAny $
           Sock.socket (Sock.addrFamily addr) Sock.Stream Sock.defaultProtocol
         ExceptT . tryAny $ Sock.setSocketOption sock Sock.NoDelay 1
@@ -150,12 +145,14 @@ initializeWebsocket port =
 
 -- | If a module passes the parsing phase then we get its proper name
 parsedResult :: MonadIO m
-             => Ghc.ModSummary
+             => [Ghc.CommandLineOption]
+             -> Ghc.ModSummary
              -> Ghc.HsParsedModule
              -> m Ghc.HsParsedModule
-parsedResult modSum parsedMod
+parsedResult opts modSum parsedMod
   | Just srcFilePath <- fmap BS8.pack . Ghc.ml_hs_file $ Ghc.ms_location modSum
   = do
+    let ?port = ET.getPortFromArgs opts
     let mModName = fmap (Ghc.bytesFS . Ghc.moduleNameFS . Ghc.unLoc)
                  . Ghc.hsmodName . Ghc.unLoc
                  $ Ghc.hpm_module parsedMod
@@ -172,7 +169,8 @@ parsedResult modSum parsedMod
   | otherwise = pure parsedMod
 
 -- | Send error message to server
-reportError :: Ghc.DynFlags -> Ghc.Severity -> Ghc.SrcSpan -> Ghc.SDoc -> IO ()
+reportError :: (?port :: ET.Port)
+            => Ghc.DynFlags -> Ghc.Severity -> Ghc.SrcSpan -> Ghc.SDoc -> IO ()
 reportError dynFlags severity srcSpan msgDoc
   | Ghc.RealSrcSpan' rss <- srcSpan
   , Just errType <- getErrorType severity
@@ -225,7 +223,7 @@ reportError dynFlags severity srcSpan msgDoc
       _              -> Nothing
 
 -- | Remove all errors on the server for a specific file
-deleteErrorsForFile :: ET.FilePath -> IO ()
+deleteErrorsForFile :: (?port :: ET.Port) => ET.FilePath -> IO ()
 deleteErrorsForFile modFile = do
   let deleteMsg = ET.MkEnvelope
         { ET.version = 0
@@ -233,11 +231,10 @@ deleteErrorsForFile modFile = do
         }
   sendMessage deleteMsg
 
-sendMessage :: ET.Envelope -> IO ()
+sendMessage :: (?port :: ET.Port) => ET.Envelope -> IO ()
 sendMessage msg = do
-  port <- readMVar portMVar
   isConnected <- withMVar connMVar $ pure . isJust
-  unless isConnected (initializeWebsocket port)
+  unless isConnected initializeWebsocket
 
   eErr <- try . withMVar connMVar . traverse_ $ \conn ->
     WS.sendBinaryData conn (ET.encodeEnvelope msg)
@@ -248,7 +245,7 @@ sendMessage msg = do
       if isResourceVanishedError err
          then do
            _ <- swapMVar connMVar Nothing
-           initializeWebsocket port
+           initializeWebsocket
            connected <- withMVar connMVar $ pure . isJust
            if connected
               then sendMessage msg
