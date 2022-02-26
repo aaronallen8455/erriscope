@@ -127,8 +127,10 @@ function populateViewport() {
   // make request for html for current selected error
   const selectedId = selectedElement ? selectedElement.id : "";
   const viewportEl = document.getElementById('viewport');
-  const url = '/error/' + selectedId;
-  const req = new Request(url);
+  const req = new Request(
+    '/error',
+    { method: 'POST', body: new Blob([selectedId], { type: "text/plain" }) }
+  );
   const renderViewport = html => {
     viewportEl.innerHTML = html
     const upArrow = document.getElementById('nav-up-arrow');
@@ -175,3 +177,4 @@ function clearViewport() {
   const viewportEl = document.getElementById('viewport');
   viewportEl.innerHTML = "";
 }
+

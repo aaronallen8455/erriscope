@@ -72,30 +72,31 @@ app port errorsMVar request respond = do
           [("Content-Type", "image/png")]
           (LBS.fromStrict bs)
 
-    ["error", errorId]
-      | Just (ix, file) <- parseErrorId errorId
-      -> do
-        errorCache <- readMVar errorsMVar
-        case M.lookup file (fileErrors errorCache) of
-          Just errors
-            | (_, (_, html) : _) <- splitAt (fromIntegral ix) errors ->
-            respond $
-              responseLBS
-                status200
-                [("Content-Type", "text/html")]
-                html
-          _ -> do
-            respond $
-              responseLBS
-                status404
-                [("Content-Type", "text/plain")]
-                "Error index doesn't exist"
-      | otherwise -> do
+    ["error"] -> do
+      reqBody <- getRequestBodyChunk request
+      case parseErrorId reqBody of
+        Just (ix, file) -> do
+          errorCache <- readMVar errorsMVar
+          case M.lookup file (fileErrors errorCache) of
+            Just errors
+              | (_, (_, html) : _) <- splitAt (fromIntegral ix) errors ->
+              respond $
+                responseLBS
+                  status200
+                  [("Content-Type", "text/html")]
+                  html
+            _ ->
+              respond $
+                responseLBS
+                  status404
+                  [("Content-Type", "text/plain")]
+                  "Error index doesn't exist"
+        Nothing ->
           respond $
             responseLBS
-              status200
+              status404
               [("Content-Type", "text/plain")]
-              ""
+              "Invalid request"
 
     _ ->
       respond $

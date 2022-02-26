@@ -33,12 +33,12 @@ type RenderedHtml = LBS.ByteString
 
 type ErrorId = (Word, ET.FilePath)
 
-parseErrorId :: T.Text -> Maybe ErrorId
-parseErrorId txt
-  | (ixTxt, pathTxt) <- T.dropWhile (== '-') <$> T.break (== '-') txt
-  , Just ix <- readMaybe $ T.unpack ixTxt
+parseErrorId :: BS8.ByteString -> Maybe ErrorId
+parseErrorId bs
+  | (ixTxt, path) <- BS8.dropWhile (== '-') <$> BS8.break (== '-') bs
+  , Just ix <- readMaybe $ BS8.unpack ixTxt
   -- TODO Find something better than this hack
-  = Just (ix, TE.encodeUtf8 $ T.replace "(" "/" pathTxt)
+  = Just (ix, path)
   | otherwise = Nothing
 
 newtype ErrorCache =
@@ -218,11 +218,7 @@ errorPreviewHtml (fileError, errIdx) =
           renderErrorPreview (ET.body errMsg)
 
 mkErrorId :: ET.FileError -> Word -> ErrorId
-mkErrorId err idx =
-  ( idx
-  -- replace '/' so that it can be used as a url param
-  , BS8.intercalate "(" . BS8.split '/' $ ET.filepath err
-  )
+mkErrorId err idx = (idx , ET.filepath err)
 
 renderErrorId :: ErrorId -> AttributeValue
 renderErrorId (idx, path)
