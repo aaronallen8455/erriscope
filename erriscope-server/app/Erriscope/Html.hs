@@ -199,7 +199,7 @@ renderSidebar errorCache = renderHtml $ do
           mconcat errHtml
 
 errorPreviewHtml :: (ET.FileError, Word) -> Html
-errorPreviewHtml (fileError, errIdx) = do
+errorPreviewHtml (fileError, errIdx) =
   let errMsg = ET.errorMsg fileError
       clss = case ET.errorType errMsg of
                ET.Error -> "error"
@@ -215,8 +215,7 @@ errorPreviewHtml (fileError, errIdx) = do
           span ! class_ ("severity " <> sevClass) $ errorTypeTxt
           span ! class_ "location" $ renderLocation (ET.fileLocation errMsg)
         div ! class_ "error-preview-container" $ do
-          div ! class_ "error-preview" $
-            renderErrorPreview (ET.body errMsg)
+          renderErrorPreview (ET.body errMsg)
 
 mkErrorId :: ET.FileError -> Word -> ErrorId
 mkErrorId err idx =
@@ -234,8 +233,14 @@ renderLocation loc =
   "Line " <> toMarkup (ET.lineNum loc) <> ":" <> toMarkup (ET.colNum loc)
 
 renderErrorPreview :: BS8.ByteString -> Html
-renderErrorPreview =
-  toMarkup . decodeUtf8 . BS8.unlines . take 4 . BS8.lines
+renderErrorPreview errBody = do
+  let lns = BS8.lines errBody
+      truncateCls =
+        if length lns > 4
+           then " truncated"
+           else ""
+  div ! class_ ("error-preview" <> truncateCls) $
+    toMarkup . decodeUtf8 . BS8.unlines $ take 4 lns
 
 -- | Produces a command that can be copy/pasted in the vim command prompt to
 -- go to jump to the location of an error.

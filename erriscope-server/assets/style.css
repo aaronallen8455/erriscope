@@ -107,12 +107,15 @@ html {
 }
 
 .error-preview-container .error-preview {
-  mask-image: linear-gradient(to bottom, black 17px, transparent 80px);
   color: white;
   font-family: monospace;
   white-space: pre;
   padding: 3px;
   overflow-x: auto;
+}
+
+.error-preview.truncated {
+  mask-image: linear-gradient(to bottom, black 45%, transparent 100%);
 }
 
 /* Viewport */
