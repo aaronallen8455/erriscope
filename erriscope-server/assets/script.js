@@ -145,7 +145,6 @@ function populateViewport() {
         selectNext
       );
     }
-
 //    const locationEl = viewportEl.getElementsByClassName('location')[0];
 //    if (locationEl) {
 //      locationEl.addEventListener(
@@ -153,11 +152,22 @@ function populateViewport() {
 //        (ev => navigator.clipboard.writeText(locationEl.dataset.vimCmd))
 //      );
 
-  }
+  };
+
+  const errorHandler = err => {
+    const errMessage = document.createElement('div');
+    errMessage.classList.add('server-error');
+    errMessage.innerText =
+      "Error! Unable to connect to the server. Ensure that 'erriscope-server' is running then reload the page."
+    viewportEl.innerHTML = "";
+    viewportEl.appendChild(errMessage);
+  };
+
 
   fetch(req)
     .then(resp => resp.text())
-    .then(renderViewport);
+    .then(renderViewport)
+    .catch(errorHandler);
 }
 
 // Clears the viewport if there are no errors

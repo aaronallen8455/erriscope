@@ -4,7 +4,7 @@ module Erriscope.Sockets
   ) where
 
 import           Control.Concurrent.MVar
-import           Control.Exception (finally)
+import           Control.Exception (finally, handle, try)
 import           Control.Monad
 import qualified Data.ByteString as BS
 import           Data.Foldable
@@ -27,18 +27,23 @@ socketServer errorsMVar clientsMVar pending = do
     "plugin" -> WS.withPingThread conn 30 (pure ())
               . (`finally` pure ())
               . forever $ do
-      msg <- WS.receiveData conn
-      case ET.decodeEnvelope msg of
-        Left err -> putStrLn $ "Decoding error: " <> err
-        Right (ET.MkEnvelope _ m) -> handleMessage errorsMVar clientsMVar m
+      eMsg <- try @WS.ConnectionException $ WS.receiveData conn
+      case eMsg of
+        Left _err -> pure ()
+        Right msg ->
+          case ET.decodeEnvelope msg of
+            Left err -> putStrLn $ "Decoding error: " <> err
+            Right (ET.MkEnvelope _ m) -> handleMessage errorsMVar clientsMVar m
 
     "frontend" -> do
       clientId <- addClient conn clientsMVar
       -- send current sidebar html to new client
       sendSidebarHtmlToClient errorsMVar conn
       let disconnect = removeClient conn clientId clientsMVar
+          errHandler _ = pure ()
       WS.withPingThread conn 30 (pure ()) . (`finally` disconnect) $
-        forever . void $ WS.receiveData @BS.ByteString conn
+        forever . handle @WS.ConnectionException errHandler
+                . void $ WS.receiveData @BS.ByteString conn
 
     _ -> WS.sendClose conn ("invalid connection type" :: BS.ByteString)
 

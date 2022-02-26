@@ -9,7 +9,7 @@ developer experience for a REPL based workflow.
 Advantages over viewing errors in the terminal include:
 - A summary view of all errors organized by module and showing only the first 4
   lines of each error message.
-- A view containing the complete error message complete with syntax highlighting.
+- A view containing the complete error message with added syntax highlighting.
 - Warnings persist across reloads which is an issue with GHCi.
 
 ![Screenshot](/screenshot.png)
@@ -32,11 +32,11 @@ or
 
 - Start up a REPL with the following arguments to enable the plugin:
 ```bash
-cabal repl -b erriscope --repl-options="-fplugin Erriscope"
+> cabal repl -b erriscope --repl-options="-fplugin Erriscope"
 ```
 or
 ```bash
-stack repl --package erriscope --ghci-options "-fplugin Erriscope"
+> stack repl --package erriscope --ghci-options "-fplugin Erriscope"
 ```
 
 - Point your browser to `localhost:8888`
@@ -50,11 +50,11 @@ You can change the port on which the server and plugin run using command line
 arguments. For example, if you want to run the server on port 8000, start the
 server as follows:
 ```bash
-erriscope-server 8000
+> erriscope-server 8000
 ```
 and add the additon GHC plugin option:
 ```bash
-cabal repl -b erriscope --repl-options="-fplugin Erriscope -fplugin-opts Erriscope:8000"
+> cabal repl -b erriscope --repl-options="-fplugin Erriscope -fplugin-opts Erriscope:8000"
 ```
 
 ### Issues

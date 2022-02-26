@@ -145,6 +145,11 @@ html {
   color: #acacac;
 }
 
+#viewport .server-error {
+  padding: 40px;
+  font-size: 1.5em;
+}
+
 .nav-arrows {
   display: inline-block;
   transform: scale(1.4) rotate(90deg);

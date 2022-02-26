@@ -8,7 +8,6 @@ module Erriscope
 import           Control.Concurrent.MVar
 import           Control.Exception.Safe (throwIO, try, tryAny)
 import           Control.Monad
-import           Control.Monad.Trans.Except
 import           Control.Monad.IO.Class
 import qualified Data.ByteString.Builder as BSB
 import qualified Data.ByteString.Char8 as BS8
@@ -110,24 +109,21 @@ initializeWebsocket =
   modifyMVar_ connMVar $ \case
     Just conn -> pure (Just conn)
     Nothing -> do
-      eConn <- runExceptT $ do
+      eConn <- tryAny $ do
         -- Create and connect socket
         let hints = Sock.defaultHints {Sock.addrSocketType = Sock.Stream}
             -- Correct host and path.
             host = "127.0.0.1"
             fullHost = if ?port == 80 then host else host ++ ":" ++ show ?port
-        addr:_ <- ExceptT . tryAny $
-          Sock.getAddrInfo (Just hints) (Just host) (Just $ show ?port)
-        sock <- ExceptT . tryAny $
-          Sock.socket (Sock.addrFamily addr) Sock.Stream Sock.defaultProtocol
-        ExceptT . tryAny $ Sock.setSocketOption sock Sock.NoDelay 1
-        ExceptT . tryAny $
-          Sock.connect sock (Sock.addrAddress addr)
+        addr:_ <- Sock.getAddrInfo (Just hints) (Just host) (Just $ show ?port)
+        sock <- Sock.socket (Sock.addrFamily addr) Sock.Stream Sock.defaultProtocol
+        Sock.setSocketOption sock Sock.NoDelay 1
+        Sock.connect sock (Sock.addrAddress addr)
         -- TODO does the stream need to be closed when application shuts down?
         -- Could use `mkWeakMVar` if so
-        stream <- ExceptT . tryAny $ Stream.makeSocketStream sock
+        stream <- Stream.makeSocketStream sock
 
-        conn <- ExceptT . tryAny $
+        conn <-
           WS.newClientConnection
             stream
             fullHost
@@ -135,7 +131,7 @@ initializeWebsocket =
             WS.defaultConnectionOptions
             []
 
-        ExceptT . tryAny $ WS.sendTextData conn (BS8.pack "plugin")
+        WS.sendTextData conn (BS8.pack "plugin")
         pure conn
       case eConn of
         Left _err -> do
