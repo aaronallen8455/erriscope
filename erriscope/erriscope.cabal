@@ -3,24 +3,31 @@ name:               erriscope
 version:            0.1.0.0
 
 -- A short (one-line) description of the package.
--- synopsis:
+synopsis: A GHC plugin for viewing errors.
 
 -- A longer description of the package.
--- description:
+description:
+  This is a GHC plugin that sends the errors and warnings emitted by GHC to an
+  instance of @erriscope-server@ which then provides an ergonomic UI for
+  viewing the messages.
+  .
+  See the [README](https://github.com/aaronallen8455/erriscope#readme) for more
+  information.
 
 -- A URL where users can report bugs.
 -- bug-reports:
 
 -- The license under which the package is released.
--- license:
+license: MIT
 
 -- The package author(s).
 -- author:
 maintainer:         aaron@flipstone.com
+tested-with: GHC==8.10.7, GHC==9.0.2
 
 -- A copyright notice.
 -- copyright:
--- category:
+category: tooling, debug, development, plugin
 extra-source-files: CHANGELOG.md
 
 library

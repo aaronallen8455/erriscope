@@ -1,2 +1,5 @@
-packages: */*.cabal
+packages:
+  erriscope-server/*.cabal
+  erriscope-types/*.cabal
+  erriscope/*.cabal
 tests: True
