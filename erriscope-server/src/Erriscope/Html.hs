@@ -4,6 +4,9 @@ module Erriscope.Html
   , renderViewport
   , renderSidebar
   , parseErrorId
+  , labeledCodeBlock
+  , getIndentedPortion
+  , renderErrorBody
   ) where
 
 import           Control.Applicative
@@ -71,7 +74,7 @@ renderViewport fileErr = renderHtml $ do
     span ! class_ "location" $
       "(" <> renderLocation (ET.fileLocation err) <> ")"
   div ! class_ "error-body" $ do
-    renderErrorBody err
+    renderErrorBody $ ET.body err
     p $ renderCaret err
 
 -- | Create HTML for the caret portion of the error.
@@ -102,12 +105,8 @@ renderCaret err = highlight . decodeUtf8 $ ET.caret err
        <> (span ! class_ caretClass) (toMarkup caret)
        <> toMarkup rest
 
--- TODO be more selective about what parts of the message get syntax highlighting.
---
--- "the infered types of"
---
-renderErrorBody :: ET.ErrorMsg -> Html
-renderErrorBody = replaceQuotes . decodeUtf8 . ET.body
+renderErrorBody :: ET.ErrorBody -> Html
+renderErrorBody = replaceQuotes . decodeUtf8
   where
     highlight = highlightCodeBlock
       [ inCodeBlock
@@ -117,6 +116,7 @@ renderErrorBody = replaceQuotes . decodeUtf8 . ET.body
       , labeledCodeBlock "ariable not in scope:"
       , labeledCodeBlock "To import instances alone, use:"
       , labeledCodeBlock "elevant bindings include"
+      , labeledCodeBlock "the inferred type of"
       ]
     replaceQuotes = foldMap go . T.split (== '‘')
     go t
@@ -125,12 +125,12 @@ renderErrorBody = replaceQuotes . decodeUtf8 . ET.body
      <> highlight rest
     go t = highlight t
 
--- | Identify a code snippet within the input and do syntax highlighting.
+-- | Identify code snippets within the input and do syntax highlighting.
 highlightCodeBlock :: [T.Text -> Maybe (T.Text, T.Text)] -> T.Text -> Html
 highlightCodeBlock (fn:preds) inp =
   fromMaybe (highlightCodeBlock preds inp) $ do
     (before, codeBlock) <- fn inp
-    (inCode, rest) <- getIndentedPortion codeBlock
+    (inCode, rest) <- getIndentedPortion before codeBlock
     pure $ highlightCodeBlock preds before
         <> highlightSyntax inCode
         <> highlightCodeBlock (fn:preds) rest
@@ -154,17 +154,29 @@ labeledCodeBlock herald inp = do
 
 -- | When an error contains a block of code, the end of that block can usually
 -- be determined by finding the next line where the indentation has changed.
-getIndentedPortion :: T.Text -> Maybe (T.Text, T.Text)
-getIndentedPortion inp = do
-  let lns = T.lines inp
+getIndentedPortion
+  :: T.Text -- ^ Portion of the message before the start of the code block
+  -> T.Text
+  -> Maybe (T.Text, T.Text)
+getIndentedPortion precedingText inp = do
+  let (_, afterNewline) = T.breakOnEnd "\n" precedingText
+      addToIndentation = T.length afterNewline
+      -- use splitOn instead of lines to preserve newlines at the end
+      lns = T.splitOn "\n" inp
       getIndentation = T.length . T.takeWhile isSpace
   (prefix, l : rest) <- pure $ Prelude.span T.null lns
-  let ind = getIndentation l
+  let ind = getIndentation l + addToIndentation
       ind' = if ind <= 1 then maxBound else ind
       (inBlock, out) =
         break (\x -> not (T.null x) && getIndentation x < ind')
               rest
-  pure (T.unlines $ prefix ++ l : inBlock, T.unlines out)
+  -- unlines adds a newline character to the last element of its input
+  -- which is accounted for by using intercalate instead
+  pure ( (if null out
+             then T.intercalate "\n"
+             else T.unlines)
+         $ prefix ++ l : inBlock
+       , T.intercalate "\n" out )
 
 renderSidebar :: ErrorCache -> RenderedHtml
 renderSidebar errorCache = renderHtml $ do
