@@ -39,7 +39,7 @@ data Envelope =
     { version :: Int
       -- ^ Allows an incompatibility between the plugin and server to be detected
     , message :: Message
-    }
+    } deriving (Eq, Show)
 
 instance Serialize Envelope where
   put MkEnvelope{..} = put (version, message)
@@ -50,6 +50,7 @@ instance Serialize Envelope where
 data Message
   = AddError FileError -- Add an error
   | DeleteFile FilePath -- Remove all existing errors for a file
+  deriving (Eq, Show)
 
 instance Serialize Message where
   put (AddError fileError) = do
@@ -75,7 +76,7 @@ data FileError =
     { moduleName :: Maybe ModuleName
     , filepath :: FilePath
     , errorMsg :: ErrorMsg
-    }
+    } deriving (Show, Eq)
 
 isWarning :: FileError -> Bool
 isWarning = (== Warning) . errorType . errorMsg
@@ -92,7 +93,7 @@ data ErrorMsg =
     , caret :: BS.ByteString
     , errorType :: ErrorType
     , fileLocation :: Location
-    }
+    } deriving (Show, Eq)
 
 instance Serialize ErrorMsg where
   put MkErrorMsg{..} =
@@ -117,7 +118,7 @@ data Location =
   MkLocation
     { lineNum :: Word
     , colNum :: Word
-    } deriving (Eq, Ord)
+    } deriving (Eq, Ord, Show)
 
 instance Serialize Location where
   put MkLocation{..} = put (lineNum, colNum)
