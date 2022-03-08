@@ -9,18 +9,22 @@ import           Test.Hspec
 import           Test.Hspec.Expectations
 import           Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 
-import           Erriscope.Html (getIndentedPortion, labeledCodeBlock, renderErrorBody)
+import qualified Erriscope.Html as E
 import qualified Erriscope.Types as ET
 
 main = hspec $
   describe "Erriscope.Html" $ do
     it "identifies code block correctly" $ do
-      let res = fmap fst $ uncurry getIndentedPortion
-                  =<< labeledCodeBlock "xpected type:" servantType
+      let res = fmap fst $ uncurry E.getIndentedPortion
+                  =<< E.labeledCodeBlock "xpected type:" servantType
       res `shouldBe` Just servantTypeResult
     it "renders correct HTML" $ do
-      let res = renderHtml $ renderErrorBody test2
+      let res = renderHtml $ E.renderErrorBody test2
       res `shouldBe` test2Result
+    it "identifies code block correctly" $ do
+      let res = fmap fst $ uncurry E.getIndentedPortion
+                  =<< E.inCodeBlock test3
+      res `shouldBe` Just test3Result
 
 servantType :: T.Text
 servantType =
@@ -101,3 +105,21 @@ test2Result = TEL.encodeUtf8
     but its type ‘<span class="syn-uc-identifier">String</span> <span class="syn-operator">-&gt;</span> <span class="syn-uc-identifier">IO</span> <span class="syn-reserved-name">(</span><span class="syn-reserved-name">)</span>’ has only one
   In a stmt of a &\#39;do&\#39; block: <span class="syn-lc-identifier">putStrLn</span> <span class="syn-number">43770</span> <span class="syn-string-lit">&quot;world&quot;</span>
   In the expression: <span class="syn-reserved-name">do</span> <span class="syn-lc-identifier">putStrLn</span> <span class="syn-number">43770</span> <span class="syn-string-lit">&quot;world&quot;</span>|]
+
+test3 :: T.Text
+test3 =
+  [i|• In the type signature:
+    handleArchivePone :: _ =>
+                         Maybe Graph
+                         -> ParsedMessage
+                            -> m (Either MessageProcessError MessageProcessingOutputs)
+                               -> m (Either MessageProcessError MessageProcessingOutputs)|]
+
+test3Result :: T.Text
+test3Result =
+  [i|
+    handleArchivePone :: _ =>
+                         Maybe Graph
+                         -> ParsedMessage
+                            -> m (Either MessageProcessError MessageProcessingOutputs)
+                               -> m (Either MessageProcessError MessageProcessingOutputs)|]

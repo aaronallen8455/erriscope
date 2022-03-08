@@ -7,6 +7,7 @@ module Erriscope.Html
   , labeledCodeBlock
   , getIndentedPortion
   , renderErrorBody
+  , inCodeBlock
   ) where
 
 import           Control.Applicative
@@ -117,6 +118,8 @@ renderErrorBody = replaceQuotes . decodeUtf8
       , labeledCodeBlock "To import instances alone, use:"
       , labeledCodeBlock "elevant bindings include"
       , labeledCodeBlock "the inferred type of"
+      , labeledCodeBlock "rom the context:"
+      , labeledCodeBlock "ound by the type signature for:"
       ]
     replaceQuotes = foldMap go . T.split (== '‘')
     go t
@@ -165,7 +168,8 @@ getIndentedPortion precedingText inp = do
       lns = T.splitOn "\n" inp
       getIndentation = T.length . T.takeWhile isSpace
   (prefix, l : rest) <- pure $ Prelude.span T.null lns
-  let ind = getIndentation l + addToIndentation
+  let ind | null prefix = getIndentation l + addToIndentation
+          | otherwise = getIndentation l
       ind' = if ind <= 1 then maxBound else ind
       (inBlock, out) =
         break (\x -> not (T.null x) && getIndentation x < ind')
