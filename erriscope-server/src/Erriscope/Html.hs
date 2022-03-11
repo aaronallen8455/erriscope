@@ -120,6 +120,7 @@ renderErrorBody = replaceQuotes . decodeUtf8
       , labeledCodeBlock "the inferred type of"
       , labeledCodeBlock "rom the context:"
       , labeledCodeBlock "ound by the type signature for:"
+      , labeledCodeBlock "a pattern with constructor:"
       ]
     replaceQuotes = foldMap go . T.split (== '‘')
     go t
