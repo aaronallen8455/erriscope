@@ -145,8 +145,14 @@ inCodeBlock inp = do
   let (before, after) = T.breakOn "In " inp
   guard $ not (T.null after)
   let (inStmt, codeBlock) = T.span (\c -> c /= ':' && c /= '\n') after
-  (':', inCode) <- T.uncons codeBlock
-  pure (before <> inStmt <> ":", inCode)
+  if "In a stmt of " `T.isPrefixOf` inStmt
+     then do
+       let (inStmt2, inStmt3) = T.span (/= ':') codeBlock
+       (':', inCode) <- T.uncons inStmt3
+       pure (before <> inStmt <> inStmt2 <> ":", inCode)
+     else do
+       (':', inCode) <- T.uncons codeBlock
+       pure (before <> inStmt <> ":", inCode)
 
 labeledCodeBlock :: T.Text -> T.Text -> Maybe (T.Text, T.Text)
 labeledCodeBlock herald inp = do

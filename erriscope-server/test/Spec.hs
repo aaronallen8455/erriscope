@@ -25,6 +25,10 @@ main = hspec $
       let res = fmap fst $ uncurry E.getIndentedPortion
                   =<< E.inCodeBlock test3
       res `shouldBe` Just test3Result
+    it "handles 'In a stmt of'" $ do
+      let res = fmap fst $ uncurry E.getIndentedPortion
+                  =<< E.inCodeBlock test4
+      res `shouldBe` Just test4Result
 
 servantType :: T.Text
 servantType =
@@ -123,3 +127,12 @@ test3Result =
                          -> ParsedMessage
                             -> m (Either MessageProcessError MessageProcessingOutputs)
                                -> m (Either MessageProcessError MessageProcessingOutputs)|]
+
+test4 :: T.Text
+test4 =
+  [i|  In a stmt of a pattern guard for
+                 a case alternative:
+    Just locationName <- W.twName <$> getTransferringWarehouse wtg|]
+
+test4Result :: T.Text
+test4Result = "\n    Just locationName <- W.twName <$> getTransferringWarehouse wtg"
