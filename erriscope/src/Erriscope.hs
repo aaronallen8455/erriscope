@@ -33,6 +33,9 @@ connMVar = unsafePerformIO $ newMVar Nothing
 data KnownFile =
   MkKnownFile
     { modName :: !(Maybe ET.ModuleName)
+    -- ^ The ModuleName is a Maybe because errors might occur during the parsing
+    -- phase in which case we may not know the module name but still want to have
+    -- the file registered so that deleted file pruning will work.
     , emittedErrors :: !(S.Set (ET.ErrorBody, ET.Location))
     -- ^ It is necessary to track the errors that have been emitted for a file
     -- because when compiling with multiple targets in stack, the log action
@@ -41,10 +44,13 @@ data KnownFile =
 
 {-# NOINLINE knownFilesMVar #-}
 knownFilesMVar :: MVar (M.Map ET.FilePath KnownFile)
--- The ModuleName is a Maybe because errors might occur during the parsing
--- phase in which case we may not know the module name but still want to have
--- the file registered so that deleted file pruning will work.
+-- FilePath is a Maybe because fatal errors are not attached to a location
+-- and are cleared at the start of any module compilation
 knownFilesMVar = unsafePerformIO $ newMVar mempty
+
+{-# NOINLINE nonLocatedErrorsMVar #-}
+nonLocatedErrorsMVar :: MVar (S.Set ET.ErrorBody)
+nonLocatedErrorsMVar = unsafePerformIO $ newMVar mempty
 
 plugin :: Ghc.Plugin
 plugin = Ghc.defaultPlugin
@@ -84,11 +90,21 @@ driverPlugin opts dynFlags = do
 -- and also prune deleted files.
 beginCompilation :: (?port :: ET.Port) => ET.FilePath -> IO ()
 beginCompilation modFile = do
-  deleteErrorsForFile modFile
+  deleteErrorsForFile (Just modFile)
   modifyMVar_ knownFilesMVar $
     pure . M.insert modFile
       MkKnownFile { modName = Nothing , emittedErrors = mempty }
   pruneDeletedFiles
+  deleteNonLocatedErrors
+
+deleteNonLocatedErrors :: (?port :: ET.Port) => IO ()
+deleteNonLocatedErrors = do
+  modifyMVar_ nonLocatedErrorsMVar $ \nonLocatedErrors ->
+    if S.null nonLocatedErrors
+       then pure nonLocatedErrors
+       else do
+         deleteErrorsForFile Nothing
+         pure mempty
 
 -- | Check for any known files that have been deleted and remove it from the
 -- server and known files map.
@@ -99,7 +115,7 @@ pruneDeletedFiles = do
         Dir.doesFileExist (BS8.unpack filePath) >>= \case
           True  -> pure ()
           False -> do
-            deleteErrorsForFile filePath
+            deleteErrorsForFile (Just filePath)
             modifyMVar_ knownFilesMVar $ pure . M.delete filePath
   void $ M.traverseWithKey go knownFiles
 
@@ -160,7 +176,7 @@ parsedResult opts modSum parsedMod
     -- for modules that are re-compiled due to a change in another module.
     -- Note that parse errors cannot result from such a change, so they will
     -- not get duplicated on the server.
-    liftIO $ deleteErrorsForFile srcFilePath
+    liftIO $ deleteErrorsForFile (Just srcFilePath)
     pure parsedMod
   | otherwise = pure parsedMod
 
@@ -190,13 +206,13 @@ reportError dynFlags severity srcSpan msgDoc
                    <$> Ghc.getCaretDiagnostic severity srcSpan
               let fileErr = ET.MkFileError
                     { ET.moduleName = mModName
-                    , ET.filepath = modFile
+                    , ET.filepath = Just modFile
                     , ET.errorMsg = ET.MkErrorMsg
                       { ET.body = errBody
-                      , ET.caret = BSL.toStrict . BSB.toLazyByteString
+                      , ET.caret = Just . BSL.toStrict . BSB.toLazyByteString
                                  $ BSB.stringUtf8 caret
                       , ET.errorType = errType
-                      , ET.fileLocation = loc
+                      , ET.fileLocation = Just loc
                       }
                     }
                   errorMessage =
@@ -211,19 +227,48 @@ reportError dynFlags severity srcSpan msgDoc
 
     traverse_ sendMessage mMsg
 
+  -- Capture errors that don't have a location, such as cyclic imports.
+  | Ghc.UnhelpfulSpan _ <- srcSpan
+  , Just errType <- getErrorType severity
+  = do
+    let errBody = BSL.toStrict . BSB.toLazyByteString . BSB.stringUtf8
+                  $ Ghc.showSDocForUser dynFlags Ghc.neverQualify msgDoc
+    modifyMVar_ nonLocatedErrorsMVar $ \nonLocatedErrors ->
+      if S.member errBody nonLocatedErrors
+         then pure nonLocatedErrors
+         else do
+           let fileErr = ET.MkFileError
+                 { ET.moduleName = Nothing
+                 , ET.filepath = Nothing
+                 , ET.errorMsg = ET.MkErrorMsg
+                   { ET.body = errBody
+                   , ET.caret = Nothing
+                   , ET.errorType = errType
+                   , ET.fileLocation = Nothing
+                   }
+                 }
+               errorMessage =
+                 ET.MkEnvelope
+                   { ET.version = 0
+                   , ET.message = ET.AddError fileErr
+                   }
+           sendMessage errorMessage
+           pure (S.insert errBody nonLocatedErrors)
+
   | otherwise = pure ()
   where
     getErrorType = \case
       Ghc.SevWarning -> Just ET.Warning
       Ghc.SevError   -> Just ET.Error
+      Ghc.SevFatal   -> Just ET.Error
       _              -> Nothing
 
 -- | Remove all errors on the server for a specific file
-deleteErrorsForFile :: (?port :: ET.Port) => ET.FilePath -> IO ()
-deleteErrorsForFile modFile = do
+deleteErrorsForFile :: (?port :: ET.Port) => Maybe ET.FilePath -> IO ()
+deleteErrorsForFile mModFile = do
   let deleteMsg = ET.MkEnvelope
         { ET.version = 0
-        , ET.message = ET.DeleteFile modFile
+        , ET.message = ET.DeleteFile mModFile
         }
   sendMessage deleteMsg
 

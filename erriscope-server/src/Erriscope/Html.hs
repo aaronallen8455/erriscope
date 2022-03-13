@@ -35,32 +35,34 @@ import qualified Erriscope.Types as ET
 
 type RenderedHtml = LBS.ByteString
 
-type ErrorId = (Word, ET.FilePath)
+type ErrorId = (Word, Maybe ET.FilePath)
 
 parseErrorId :: BS8.ByteString -> Maybe ErrorId
 parseErrorId bs
   | (ixTxt, path) <- BS8.dropWhile (== '-') <$> BS8.break (== '-') bs
   , Just ix <- readMaybe $ BS8.unpack ixTxt
   -- TODO Find something better than this hack
-  = Just (ix, path)
+  = Just (ix, if BS8.null path then Nothing else Just path)
   | otherwise = Nothing
 
 newtype ErrorCache =
   MkErrorCache
-    { fileErrors :: M.Map ET.FilePath [(ET.FileError, RenderedHtml)] }
+    { fileErrors :: M.Map (Maybe ET.FilePath) [(ET.FileError, RenderedHtml)] }
 
 emptyErrorCache :: ErrorCache
 emptyErrorCache = MkErrorCache { fileErrors = mempty }
 
 getModuleName :: ET.FileError -> BS8.ByteString
 getModuleName fError
-  = fromMaybe (ET.filepath fError) $ ET.moduleName fError
+  = fromMaybe (fromMaybe "(No Module)" $ ET.filepath fError)
+  $ ET.moduleName fError
 
 renderViewport :: ET.FileError -> RenderedHtml
 renderViewport fileErr = renderHtml $ do
   let err = ET.errorMsg fileErr
       modName = getModuleName fileErr
-      filePath = toValue . decodeUtf8 $ ET.filepath fileErr
+      filePath = maybe "(No Module)" (toValue . decodeUtf8)
+               $ ET.filepath fileErr
   div ! class_ "error-heading" $ do
     div ! class_ "nav-arrows" $ do
       div ! A.id "nav-up-arrow" ! A.title "Previous (Shift+UpArrow)"
@@ -72,15 +74,16 @@ renderViewport fileErr = renderHtml $ do
       ET.Warning -> span ! class_ "severity severity-warning" $ "Warning"
     span ! class_ "mod-name" ! A.title filePath $
       toMarkup $ decodeUtf8 modName
-    span ! class_ "location" $
-      "(" <> renderLocation (ET.fileLocation err) <> ")"
+    for_ (ET.fileLocation err) $ \loc ->
+      span ! class_ "location" $
+        "(" <> renderLocation loc <> ")"
   div ! class_ "error-body" $ do
     renderErrorBody $ ET.body err
     p $ renderCaret err
 
 -- | Create HTML for the caret portion of the error.
 renderCaret :: ET.ErrorMsg -> Html
-renderCaret err = highlight . decodeUtf8 $ ET.caret err
+renderCaret err = foldMap (highlight . decodeUtf8) $ ET.caret err
   where
     highlight inp =
       case T.lines inp of
@@ -223,12 +226,14 @@ renderSidebar errorCache = renderHtml $ do
     fileGroup fErrors = do
       let mFError = fst <$> listToMaybe fErrors
           mModName = getModuleName <$> mFError
-          filePath = toValue $ foldMap (decodeUtf8 . ET.filepath) mFError
+          filePath = foldMap
+                       (decodeUtf8 . fromMaybe "(No Module)" . ET.filepath)
+                       mFError
           errHtml = fmap errorPreviewHtml
                   . (`zip` [0..])
                   $ fst <$> fErrors
       div ! class_ "file-group" $ do
-        span ! class_ "file-name" ! A.title filePath $
+        span ! class_ "file-name" ! A.title (toValue filePath) $
           toMarkup (decodeUtf8 $ fold mModName)
         div ! class_ "errors-for-file" $
           mconcat errHtml
@@ -248,7 +253,8 @@ errorPreviewHtml (fileError, errIdx) =
    in div ! A.id ixAttr ! class_ clss $ do
         div ! class_ "error-preview-header" $ do
           span ! class_ ("severity " <> sevClass) $ errorTypeTxt
-          span ! class_ "location" $ renderLocation (ET.fileLocation errMsg)
+          for_ (ET.fileLocation errMsg) $ \loc ->
+            span ! class_ "location" $ renderLocation loc
         div ! class_ "error-preview-container" $ do
           renderErrorPreview (ET.body errMsg)
 
@@ -256,8 +262,8 @@ mkErrorId :: ET.FileError -> Word -> ErrorId
 mkErrorId err idx = (idx , ET.filepath err)
 
 renderErrorId :: ErrorId -> AttributeValue
-renderErrorId (idx, path)
-  = toValue idx <> "-" <> toValue (decodeUtf8 path)
+renderErrorId (idx, mPath)
+  = toValue idx <> "-" <> maybe "" (toValue . decodeUtf8) mPath
 
 renderLocation :: ET.Location -> Html
 renderLocation loc =

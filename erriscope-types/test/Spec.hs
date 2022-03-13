@@ -25,14 +25,14 @@ messageGen :: Gen Message
 messageGen =
   choice
     [ AddError <$> fileErrorGen
-    , DeleteFile <$> filePathGen
+    , DeleteFile <$> Gen.maybe filePathGen
     ]
 
 fileErrorGen :: Gen FileError
 fileErrorGen =
   MkFileError
     <$> Gen.maybe filePathGen
-    <*> filePathGen
+    <*> Gen.maybe filePathGen
     <*> errorMsgGen
 
 filePathGen :: Gen FilePath
@@ -42,9 +42,9 @@ errorMsgGen :: Gen ErrorMsg
 errorMsgGen =
   MkErrorMsg
     <$> utf8 (Range.constant 1 3000) unicodeAll
-    <*> utf8 (Range.constant 1 100) unicodeAll
+    <*> Gen.maybe (utf8 (Range.constant 1 100) unicodeAll)
     <*> enumBounded
-    <*> locationGen
+    <*> Gen.maybe locationGen
 
 errorTypeGen :: Gen ErrorType
 errorTypeGen = choice [pure Error, pure Warning]

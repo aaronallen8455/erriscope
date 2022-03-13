@@ -47,9 +47,10 @@ instance Serialize Envelope where
     (version, message) <- get
     pure MkEnvelope{..}
 
+-- FilePath is Nothing for non-located errors
 data Message
   = AddError FileError -- Add an error
-  | DeleteFile FilePath -- Remove all existing errors for a file
+  | DeleteFile (Maybe FilePath) -- Remove all existing errors for a file
   deriving (Eq, Show)
 
 instance Serialize Message where
@@ -74,7 +75,7 @@ decodeEnvelope = decode
 data FileError =
   MkFileError
     { moduleName :: Maybe ModuleName
-    , filepath :: FilePath
+    , filepath :: Maybe FilePath
     , errorMsg :: ErrorMsg
     } deriving (Show, Eq)
 
@@ -90,9 +91,9 @@ instance Serialize FileError where
 data ErrorMsg =
   MkErrorMsg
     { body :: ErrorBody
-    , caret :: BS.ByteString
+    , caret :: Maybe BS.ByteString
     , errorType :: ErrorType
-    , fileLocation :: Location
+    , fileLocation :: Maybe Location
     } deriving (Show, Eq)
 
 instance Serialize ErrorMsg where

@@ -194,3 +194,6 @@ test5Result = [i|  In an equation for ‘<span class="syn-lc-identifier">example
              <span class="syn-lc-identifier">edi855SupplierPickupReferenceNumber</span> <span class="syn-operator">=</span> <span class="syn-uc-identifier">Just</span>
                                                      <span class="syn-lc-identifier">exampleSupplierPickupReferenceNumber</span><span class="syn-reserved-name">,</span>
              <span class="syn-lc-identifier">edi855OriginFacilityAliasId</span> <span class="syn-operator">=</span> <span class="syn-uc-identifier">Just</span> <span class="syn-lc-identifier">exampleOriginFacilityAliasId</span><span class="syn-reserved-name">}</span>|]
+
+-- • No instance for (Real ServiceAmount)
+--     arising from a use of ‘toRational’

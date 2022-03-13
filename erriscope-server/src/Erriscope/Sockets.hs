@@ -62,10 +62,10 @@ handleMessage errorsMVar clientsMVar message = do
                  }
              , True
              )
-      ET.DeleteFile filePath ->
+      ET.DeleteFile mFilePath ->
         pure ( errors
-                 { fileErrors = M.delete filePath $ fileErrors errors }
-             , M.member filePath $ fileErrors errors
+                 { fileErrors = M.delete mFilePath $ fileErrors errors }
+             , M.member mFilePath $ fileErrors errors
              )
 
   -- transmit to all clients
