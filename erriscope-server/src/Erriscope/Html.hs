@@ -110,7 +110,8 @@ renderErrorBody :: ET.ErrorBody -> Html
 renderErrorBody = replaceQuotes . decodeUtf8
   where
     highlight = highlightCodeBlock
-      [ inCodeBlock
+      [ startsWithColon
+      , inCodeBlock
       -- first character chopped off to account for differing capitalization
       , labeledCodeBlock "xpected type:"
       , labeledCodeBlock "ctual type:"
@@ -128,6 +129,17 @@ renderErrorBody = replaceQuotes . decodeUtf8
       = toMarkup '‘' <> highlightSyntax codeSnippet <> toMarkup '’'
      <> highlight rest
     go t = highlight t
+
+-- | If a closing quote is followed immediately by a colon then capture that
+-- as a code block
+-- ex: In an equation for ‘exampleEdi855’: ...
+startsWithColon :: T.Text -> Maybe (T.Text, T.Text)
+startsWithColon inp = do
+  (':', rest) <- T.uncons inp
+  -- This could be a problem because the indentation delimiter will not
+  -- function properly without the complete line of preceding text which is not
+  -- available here. It's probably fine though.
+  pure (":", rest)
 
 -- | Identify code snippets within the input and do syntax highlighting.
 highlightCodeBlock :: [T.Text -> Maybe (T.Text, T.Text)] -> T.Text -> Html
