@@ -54,37 +54,34 @@ nonLocatedErrorsMVar = unsafePerformIO $ newMVar mempty
 
 plugin :: Ghc.Plugin
 plugin = Ghc.defaultPlugin
+#if MIN_VERSION_ghc(9,2,0)
+  { Ghc.driverPlugin = driverPlugin
+#else
   { Ghc.dynflagsPlugin = driverPlugin
+#endif
   , Ghc.pluginRecompile = Ghc.purePlugin
   , Ghc.parsedResultAction = parsedResult
   }
 
 -- | Overrides the log action and the phase hook.
-driverPlugin :: [Ghc.CommandLineOption] -> Ghc.DynFlags -> IO Ghc.DynFlags
-driverPlugin opts dynFlags = do
+driverPlugin :: [Ghc.CommandLineOption]
+#if MIN_VERSION_ghc(9,2,0)
+             -> Ghc.HscEnv -> IO Ghc.HscEnv
+#else
+             -> Ghc.DynFlags -> IO Ghc.DynFlags
+#endif
+driverPlugin opts env = do
   let ?port = ET.getPortFromArgs opts
   initializeWebsocket
 
-  pure dynFlags
-#if MIN_VERSION_ghc(9,0,0)
-    { Ghc.log_action = \dflags warnReason severity srcSpan msgDoc -> do
-        reportError dflags severity srcSpan msgDoc
-        Ghc.log_action dynFlags dflags warnReason severity srcSpan msgDoc
-#else
-    { Ghc.log_action = \dflags warnReason severity srcSpan pprStyle msgDoc -> do
-        reportError dflags severity srcSpan msgDoc
-        Ghc.log_action dynFlags dflags warnReason severity srcSpan pprStyle msgDoc
-#endif
-    , Ghc.hooks = (Ghc.hooks dynFlags)
-        { Ghc.runPhaseHook = Just $ \phase filePath dflags -> do
-            case phase of
-              Ghc.RealPhase (Ghc.Cpp _) -> -- TODO do something with the file type?
-                -- The CPP phase runs at the beginning of compiling a module.
-                liftIO $ beginCompilation (BS8.pack filePath)
-              _ -> pure ()
-            Ghc.runPhase phase filePath dflags
-        }
-    }
+  let hook filePath phase =
+        case phase of
+          Ghc.RealPhase (Ghc.Cpp _) -> do
+            beginCompilation (BS8.pack filePath)
+          _ -> pure ()
+
+  pure . Ghc.addPhaseHook hook
+       $ Ghc.addLogAction reportError env
 
 -- | When a module starts compiling, delete all existing errors for the file
 -- and also prune deleted files.
@@ -193,7 +190,7 @@ reportError dynFlags severity srcSpan msgDoc
         Nothing -> pure (knownFiles, Nothing)
         Just knownFile -> do
           let errBody = BSL.toStrict . BSB.toLazyByteString . BSB.stringUtf8
-                      $ Ghc.showSDocForUser dynFlags Ghc.neverQualify msgDoc
+                      $ Ghc.showSDocForUser' dynFlags Ghc.neverQualify msgDoc
               loc = ET.MkLocation
                 { ET.lineNum = fromIntegral $ Ghc.srcSpanStartLine rss
                 , ET.colNum = fromIntegral $ Ghc.srcSpanStartCol rss
@@ -202,7 +199,7 @@ reportError dynFlags severity srcSpan msgDoc
              then pure (knownFiles, Nothing)
              else do
               let mModName = modName knownFile
-              caret <- Ghc.showSDocForUser dynFlags Ghc.neverQualify
+              caret <- Ghc.showSDocForUser' dynFlags Ghc.neverQualify
                    <$> Ghc.getCaretDiagnostic severity srcSpan
               let fileErr = ET.MkFileError
                     { ET.moduleName = mModName
@@ -232,7 +229,7 @@ reportError dynFlags severity srcSpan msgDoc
   , Just errType <- getErrorType severity
   = do
     let errBody = BSL.toStrict . BSB.toLazyByteString . BSB.stringUtf8
-                  $ Ghc.showSDocForUser dynFlags Ghc.neverQualify msgDoc
+                  $ Ghc.showSDocForUser' dynFlags Ghc.neverQualify msgDoc
     modifyMVar_ nonLocatedErrorsMVar $ \nonLocatedErrors ->
       if S.member errBody nonLocatedErrors
          then pure nonLocatedErrors
