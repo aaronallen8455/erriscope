@@ -2,4 +2,5 @@ packages:
   erriscope-server/*.cabal
   erriscope-types/*.cabal
   erriscope/*.cabal
+  -- sandbox/*.cabal
 tests: True

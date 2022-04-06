@@ -197,3 +197,11 @@ test5Result = [i|  In an equation for ‘<span class="syn-lc-identifier">example
 
 -- • No instance for (Real ServiceAmount)
 --     arising from a use of ‘toRational’
+--
+--
+-- Illegal standalone deriving declaration
+--   Use StandaloneDeriving to enable this extension
+-- 
+--    |
+-- 53 | deriving instance Eq YmsTrailer
+--    | ^^^^^^^^^^^^^^^^^^

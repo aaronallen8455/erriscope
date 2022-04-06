@@ -13,9 +13,11 @@ import qualified Data.ByteString.Builder as BSB
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.ByteString.Lazy as BSL
 import           Data.Foldable
+import           Data.IORef
 import qualified Data.Map.Strict as M
 import           Data.Maybe
 import qualified Data.Set as S
+import           Data.Time
 import qualified Network.Socket as Sock
 import qualified Network.WebSockets as WS
 import qualified Network.WebSockets.Stream as Stream
@@ -47,6 +49,10 @@ knownFilesMVar :: MVar (M.Map ET.FilePath KnownFile)
 -- FilePath is a Maybe because fatal errors are not attached to a location
 -- and are cleared at the start of any module compilation
 knownFilesMVar = unsafePerformIO $ newMVar mempty
+
+{-# NOINLINE lastDeletedFilePruning #-}
+lastDeletedFilePruning :: IORef (Maybe UTCTime)
+lastDeletedFilePruning = unsafePerformIO $ newIORef Nothing
 
 {-# NOINLINE nonLocatedErrorsMVar #-}
 nonLocatedErrorsMVar :: MVar (S.Set ET.ErrorBody)
@@ -107,14 +113,20 @@ deleteNonLocatedErrors = do
 -- server and known files map.
 pruneDeletedFiles :: (?port :: ET.Port) => IO ()
 pruneDeletedFiles = do
-  knownFiles <- readMVar knownFilesMVar
-  let go filePath _ = do
-        Dir.doesFileExist (BS8.unpack filePath) >>= \case
-          True  -> pure ()
-          False -> do
-            deleteErrorsForFile (Just filePath)
-            modifyMVar_ knownFilesMVar $ pure . M.delete filePath
-  void $ M.traverseWithKey go knownFiles
+  now <- getCurrentTime
+  mLastPruning <- readIORef lastDeletedFilePruning
+  -- Only prune if 3 seconds have elapsed since the last time since it can be
+  -- an expensive operation.
+  when (maybe True ((> 3) . diffUTCTime now) mLastPruning) $ do
+    writeIORef lastDeletedFilePruning (Just now)
+    knownFiles <- readMVar knownFilesMVar
+    let go filePath _ = do
+          Dir.doesFileExist (BS8.unpack filePath) >>= \case
+            True  -> pure ()
+            False -> do
+              deleteErrorsForFile (Just filePath)
+              modifyMVar_ knownFilesMVar $ pure . M.delete filePath
+    void $ M.traverseWithKey go knownFiles
 
 -- | Opens the websocket connection
 initializeWebsocket :: (?port :: ET.Port) => IO ()

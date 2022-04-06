@@ -101,10 +101,7 @@ addPhaseHook hook env =
   env
 #if MIN_VERSION_ghc(9,2,0)
     { hsc_hooks = (hsc_hooks env)
-      { runPhaseHook = Just $ \phase filePath -> do
-          liftIO $ putStrLn "IN HOOK"
-          liftIO $ print $ Ghc.ppr phase
-          liftIO $ hook filePath phase
+      { runPhaseHook = Just $ \phase filePath ->
           case runPhaseHook (hsc_hooks env) of
             Nothing -> runPhase phase filePath
             Just h -> h phase filePath
