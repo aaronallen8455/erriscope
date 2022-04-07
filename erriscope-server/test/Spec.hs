@@ -10,6 +10,7 @@ import           Test.Hspec.Expectations
 import           Text.Blaze.Html.Renderer.Utf8 (renderHtml)
 
 import qualified Erriscope.Html as E
+import qualified Erriscope.Html.SyntaxHighlighting as E
 import qualified Erriscope.Types as ET
 
 main = hspec $
@@ -32,6 +33,9 @@ main = hspec $
     it "handles quotes inside In statement" $ do
       let res = renderHtml $ E.renderErrorBody test5
       res `shouldBe` test5Result
+    it "handles reserved names as prefies" $ do
+      let res = renderHtml $ E.highlightSyntax test6
+      res `shouldBe` test6Result
 
 servantType :: T.Text
 servantType =
@@ -195,13 +199,12 @@ test5Result = [i|  In an equation for ‘<span class="syn-lc-identifier">example
                                                      <span class="syn-lc-identifier">exampleSupplierPickupReferenceNumber</span><span class="syn-reserved-name">,</span>
              <span class="syn-lc-identifier">edi855OriginFacilityAliasId</span> <span class="syn-operator">=</span> <span class="syn-uc-identifier">Just</span> <span class="syn-lc-identifier">exampleOriginFacilityAliasId</span><span class="syn-reserved-name">}</span>|]
 
+test6 :: T.Text
+test6 = "deriving instance Eq YmsTrailer"
+
+test6Result :: LBS.ByteString
+test6Result = [i|<span class="syn-reserved-name">deriving</span> <span class="syn-reserved-name">instance</span> <span class="syn-uc-identifier">Eq</span> <span class="syn-uc-identifier">YmsTrailer</span>|]
+
 -- • No instance for (Real ServiceAmount)
 --     arising from a use of ‘toRational’
 --
---
--- Illegal standalone deriving declaration
---   Use StandaloneDeriving to enable this extension
--- 
---    |
--- 53 | deriving instance Eq YmsTrailer
---    | ^^^^^^^^^^^^^^^^^^

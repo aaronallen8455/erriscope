@@ -8,6 +8,8 @@ import           Control.Applicative
 import           Control.Monad
 import           Data.Char (isSpace, isUpper)
 import           Data.Foldable
+import           Data.Functor ((<&>))
+import           Data.Maybe
 import qualified Data.Text as T
 import           Prelude hiding (span)
 import           Text.Blaze.Html5
@@ -38,9 +40,11 @@ P.TokenParser
   } = makeTokenParser P.haskellDef
 
 reservedNames, reservedOpNames :: [String]
+identLetter :: Parser Char
 P.LanguageDef
   { P.reservedNames = reservedNames
   , P.reservedOpNames = reservedOpNames
+  , P.identLetter = identLetter
   } = P.haskellDef
 
 parseNum :: Parser String
@@ -81,9 +85,16 @@ parseInfixFunction = do
   pure $ '`' : x ++ "`"
 
 parseReservedName :: Parser String
-parseReservedName =
-  P.choice $ P.try . P.string <$>
-    "_" : "," : "{" : "}" : "[" : "]" : "(" : ")" : reservedNames
+parseReservedName = do
+  let symbols = P.try . P.string <$> ["_", ",", "{", "}", "[", "]", "(", ")"]
+      names = reservedNames <&> \resName -> P.try $ do
+        str <- P.string resName
+        next <- P.lookAhead (optional identLetter)
+        -- make sure the next character is not an identifier character, otherwise
+        -- prefixes of non-reserved names will get highlighted
+        guard $ isNothing next
+        pure str
+  P.choice $ symbols ++ names
 
 parseReservedOp :: Parser String
 parseReservedOp =
