@@ -36,6 +36,9 @@ main = hspec $
     it "handles reserved names as prefies" $ do
       let res = renderHtml $ E.highlightSyntax test6
       res `shouldBe` test6Result
+    it "handles missing instance message" $ do
+      let res = renderHtml $ E.renderErrorBody test7
+      res `shouldBe` test7Result
 
 servantType :: T.Text
 servantType =
@@ -205,6 +208,23 @@ test6 = "deriving instance Eq YmsTrailer"
 test6Result :: LBS.ByteString
 test6Result = [i|<span class="syn-reserved-name">deriving</span> <span class="syn-reserved-name">instance</span> <span class="syn-uc-identifier">Eq</span> <span class="syn-uc-identifier">YmsTrailer</span>|]
 
--- • No instance for (Real ServiceAmount)
---     arising from a use of ‘toRational’
+test7 :: ET.ErrorBody
+test7 = TE.encodeUtf8 [i|• No instance for (Real ServiceAmount)
+    arising from a use of ‘toRational’|]
+
+test7Result :: LBS.ByteString
+test7Result =
+  [i|• No instance for <span class="syn-reserved-name">(</span><span class="syn-uc-identifier">Real</span> <span class="syn-uc-identifier">ServiceAmount</span><span class="syn-reserved-name">)</span>\n    arising from a use of ‘<span class="syn-lc-identifier">toRational</span>’|]
+
 --
+--   Valid hole fits include
+--     currentQtyOrderedToShipPacks :: CurrentQtyOrdered -> ShipPacks
+--       (imported qualified from ‘Wims.Domain.Quantity’ at /code/src/Wims/Domain/History/Text.hs:88:1-44
+--        (and originally defined in ‘Wims.Domain.Quantity.Ordered’
+--           at /code/src/Wims/Domain/Quantity/Ordered.hs:44:23-50))
+--     fromIntegral :: forall a b. (Integral a, Num b) => a -> b
+--       with fromIntegral @CurrentQtyOrdered @ShipPacks
+--       (imported from ‘Prelude’ at /code/src/Wims/Domain/History/Text.hs:3:8-31
+--        (and originally defined in ‘GHC.Real’))
+
+

@@ -125,6 +125,7 @@ renderErrorBody = replaceQuotes . decodeUtf8
       , labeledCodeBlock "rom the context:"
       , labeledCodeBlock "ound by the type signature for:"
       , labeledCodeBlock "a pattern with constructor:"
+      , labeledCodeBlock "No instance for "
       ]
     replaceQuotes = foldMap go . T.split (== '‘')
     go t

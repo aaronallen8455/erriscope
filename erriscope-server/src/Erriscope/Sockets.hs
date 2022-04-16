@@ -56,7 +56,7 @@ handleMessage errorsMVar clientsMVar message = do
             entry = (fileError, html)
         pure ( errors
                  { fileErrors =
-                     M.alter (Just . maybe [entry] (++ [entry]))
+                     M.alter (Just . maybe [entry] (entry :))
                              (ET.filepath fileError)
                              (fileErrors errors)
                  }
