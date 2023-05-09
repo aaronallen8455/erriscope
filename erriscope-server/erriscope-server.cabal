@@ -1,6 +1,6 @@
 cabal-version:      2.4
 name:               erriscope-server
-version:            0.1.0.0
+version:            0.1.0.1
 
 -- A short (one-line) description of the package.
 synopsis: Serves a UI for viewing GHC errors.
@@ -23,7 +23,7 @@ license: MIT
 -- author:
 maintainer:         aaron@flipstone.com
 
-tested-with: GHC==9.6.1
+tested-with: GHC==9.0.2, GHC==8.10.7, GHC==9.6.1
 
 -- A copyright notice.
 -- copyright:
@@ -44,7 +44,7 @@ library
     Erriscope.Html.TokenParser
     Erriscope.Sockets
   default-extensions: OverloadedStrings
-  build-depends:    base >= 4.18.0.0,
+  build-depends:    base >=4.14.0.0,
                     blaze-html,
                     bytestring,
                     containers,
@@ -66,7 +66,7 @@ executable erriscope-server
     main-is:          Main.hs
 
     default-extensions: OverloadedStrings
-    build-depends:    base >=4.18.0.0,
+    build-depends:    base >=4.14.0.0,
                       erriscope-server,
     hs-source-dirs:   app
     default-language: Haskell2010

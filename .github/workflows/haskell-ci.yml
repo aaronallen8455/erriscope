@@ -11,7 +11,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        cabal: ["3.6.2.0"]
+        cabal: ["3.10.1.0"]
         ghc:
           - "9.6.1"
 
@@ -62,7 +62,3 @@ jobs:
 
     - name: Check
       run: |
-
-    - name: Documentation
-      run: |
-        cabal haddock
