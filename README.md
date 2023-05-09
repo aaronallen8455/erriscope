@@ -58,5 +58,4 @@ and add the additon GHC plugin option:
 ```
 
 ### Issues
-- Erriscope currently only supports GHC 8.10.* and 9.0.*.
-- Currently doesn't report errors when building a project outside of the REPL
+- Erriscope currently only supports GHC 9.6.*.

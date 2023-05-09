@@ -22,7 +22,7 @@ license: MIT
 -- author:
 maintainer:         aaron@flipstone.com
 
-tested-with: GHC==9.0.2, GHC==8.10.7
+tested-with: GHC==9.6.1
 
 -- A copyright notice.
 -- copyright:
@@ -36,7 +36,7 @@ library
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base >=4.14.0.0 && <4.17.0.0,
+    build-depends:    base >=4.18.0.0,
                       cereal,
                       safe,
                       bytestring,

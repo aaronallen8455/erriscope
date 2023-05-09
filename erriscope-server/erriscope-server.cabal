@@ -23,7 +23,7 @@ license: MIT
 -- author:
 maintainer:         aaron@flipstone.com
 
-tested-with: GHC==9.0.2, GHC==8.10.7
+tested-with: GHC==9.6.1
 
 -- A copyright notice.
 -- copyright:
@@ -44,7 +44,7 @@ library
     Erriscope.Html.TokenParser
     Erriscope.Sockets
   default-extensions: OverloadedStrings
-  build-depends:    base >=4.14.0.0 && <4.17.0.0,
+  build-depends:    base >= 4.18.0.0,
                     blaze-html,
                     bytestring,
                     containers,
@@ -66,7 +66,7 @@ executable erriscope-server
     main-is:          Main.hs
 
     default-extensions: OverloadedStrings
-    build-depends:    base >=4.14.0.0 && <4.17.0.0,
+    build-depends:    base >=4.18.0.0,
                       erriscope-server,
     hs-source-dirs:   app
     default-language: Haskell2010

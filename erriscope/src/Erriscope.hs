@@ -71,23 +71,16 @@ plugin = Ghc.defaultPlugin
 
 -- | Overrides the log action and the phase hook.
 driverPlugin :: [Ghc.CommandLineOption]
-#if MIN_VERSION_ghc(9,2,0)
              -> Ghc.HscEnv -> IO Ghc.HscEnv
-#else
-             -> Ghc.DynFlags -> IO Ghc.DynFlags
-#endif
 driverPlugin opts env = do
   let ?port = ET.getPortFromArgs opts
   initializeWebsocket
 
-  let hook filePath phase =
-        case phase of
-          Ghc.RealPhase (Ghc.Cpp _) -> do
-            beginCompilation (BS8.pack filePath)
-          _ -> pure ()
+  let hook filePath =
+        beginCompilation (BS8.pack filePath)
 
-  pure . Ghc.addPhaseHook hook
-       $ Ghc.addLogAction reportError env
+  pure . Ghc.addCppPhaseHook hook
+       $ Ghc.addLogAction (reportError $ Ghc.hsc_dflags env ) env
 
 -- | When a module starts compiling, delete all existing errors for the file
 -- and also prune deleted files.
@@ -168,15 +161,15 @@ initializeWebsocket =
 parsedResult :: MonadIO m
              => [Ghc.CommandLineOption]
              -> Ghc.ModSummary
-             -> Ghc.HsParsedModule
-             -> m Ghc.HsParsedModule
-parsedResult opts modSum parsedMod
+             -> Ghc.ParsedResult
+             -> m Ghc.ParsedResult
+parsedResult opts modSum parsed
   | Just srcFilePath <- fmap BS8.pack . Ghc.ml_hs_file $ Ghc.ms_location modSum
   = do
     let ?port = ET.getPortFromArgs opts
     let mModName = fmap (Ghc.bytesFS . Ghc.moduleNameFS . Ghc.unLoc)
                  . Ghc.hsmodName . Ghc.unLoc
-                 $ Ghc.hpm_module parsedMod
+                 $ Ghc.hpm_module (Ghc.parsedResultModule parsed)
 
     liftIO . modifyMVar_ knownFilesMVar $
       pure . M.insert srcFilePath
@@ -186,15 +179,15 @@ parsedResult opts modSum parsedMod
     -- Note that parse errors cannot result from such a change, so they will
     -- not get duplicated on the server.
     liftIO $ deleteErrorsForFile (Just srcFilePath)
-    pure parsedMod
-  | otherwise = pure parsedMod
+    pure parsed
+  | otherwise = pure parsed
 
 -- | Send error message to server
 reportError :: (?port :: ET.Port)
-            => Ghc.DynFlags -> Ghc.Severity -> Ghc.SrcSpan -> Ghc.SDoc -> IO ()
-reportError dynFlags severity srcSpan msgDoc
+            => Ghc.DynFlags -> Ghc.LogFlags -> Ghc.MessageClass -> Ghc.SrcSpan -> Ghc.SDoc -> IO ()
+reportError dFlags _lFlags messageClass srcSpan msgDoc
   | Ghc.RealSrcSpan' rss <- srcSpan
-  , Just errType <- getErrorType severity
+  , Just errType <- getErrorType messageClass
   = do
     let modFile = Ghc.bytesFS $ Ghc.srcSpanFile rss
     mMsg <- modifyMVar knownFilesMVar $ \knownFiles -> do
@@ -202,7 +195,7 @@ reportError dynFlags severity srcSpan msgDoc
         Nothing -> pure (knownFiles, Nothing)
         Just knownFile -> do
           let errBody = BSL.toStrict . BSB.toLazyByteString . BSB.stringUtf8
-                      $ Ghc.showSDocForUser' dynFlags Ghc.neverQualify msgDoc
+                      $ Ghc.showSDocForUser' dFlags Ghc.neverQualify msgDoc
               loc = ET.MkLocation
                 { ET.lineNum = fromIntegral $ Ghc.srcSpanStartLine rss
                 , ET.colNum = fromIntegral $ Ghc.srcSpanStartCol rss
@@ -211,8 +204,8 @@ reportError dynFlags severity srcSpan msgDoc
              then pure (knownFiles, Nothing)
              else do
               let mModName = modName knownFile
-              caret <- Ghc.showSDocForUser' dynFlags Ghc.neverQualify
-                   <$> Ghc.getCaretDiagnostic severity srcSpan
+              caret <- Ghc.showSDocForUser' dFlags Ghc.neverQualify
+                   <$> Ghc.getCaretDiagnostic messageClass srcSpan
               let fileErr = ET.MkFileError
                     { ET.moduleName = mModName
                     , ET.filepath = Just modFile
@@ -238,10 +231,10 @@ reportError dynFlags severity srcSpan msgDoc
 
   -- Capture errors that don't have a location, such as cyclic imports.
   | Ghc.UnhelpfulSpan _ <- srcSpan
-  , Just errType <- getErrorType severity
+  , Just errType <- getErrorType messageClass
   = do
     let errBody = BSL.toStrict . BSB.toLazyByteString . BSB.stringUtf8
-                  $ Ghc.showSDocForUser' dynFlags Ghc.neverQualify msgDoc
+                  $ Ghc.showSDocForUser' dFlags Ghc.neverQualify msgDoc
     modifyMVar_ nonLocatedErrorsMVar $ \nonLocatedErrors ->
       if S.member errBody nonLocatedErrors
          then pure nonLocatedErrors
@@ -267,10 +260,12 @@ reportError dynFlags severity srcSpan msgDoc
   | otherwise = pure ()
   where
     getErrorType = \case
-      Ghc.SevWarning -> Just ET.Warning
-      Ghc.SevError   -> Just ET.Error
-      Ghc.SevFatal   -> Just ET.Error
-      _              -> Nothing
+      Ghc.MCDiagnostic sev _ _ -> case sev of
+        Ghc.SevWarning -> Just ET.Warning
+        Ghc.SevError   -> Just ET.Error
+        _              -> Nothing
+      Ghc.MCFatal -> Just ET.Error
+      _ -> Nothing
 
 -- | Remove all errors on the server for a specific file
 deleteErrorsForFile :: (?port :: ET.Port) => Maybe ET.FilePath -> IO ()

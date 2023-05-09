@@ -23,7 +23,7 @@ license: MIT
 -- The package author(s).
 -- author:
 maintainer:         aaron@flipstone.com
-tested-with: GHC==8.10.7, GHC==9.0.2, GHC==9.2.1
+tested-with: GHC==9.6.1
 
 -- A copyright notice.
 -- copyright:
@@ -35,7 +35,7 @@ library
                  -Wunused-packages
     exposed-modules:  Erriscope,
                       Erriscope.Internal.GhcFacade
-    build-depends:    base >=4.14.0.0 && <4.17.0.0,
+    build-depends:    base >=4.18.0.0,
                       erriscope-types,
                       ghc,
                       websockets,
